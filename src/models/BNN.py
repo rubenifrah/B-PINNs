@@ -46,6 +46,14 @@ class BNN(nn.Module):
         for layer in self.layers[:-1]:
             x = self.activation(layer(x))
         return self.layers[-1](x)
+    
+    def get_weights(self):
+        """Returns the current weights of the network as a 1D vector"""
+        return parameters_to_vector(self.parameters())
+    
+    def set_weights(self, theta):
+        """Sets the weights of the network from a 1D vector"""
+        vector_to_parameters(theta, self.parameters())
 
     # =========================================================================
     # Functional Forward Pass in addition to the standard forward pass

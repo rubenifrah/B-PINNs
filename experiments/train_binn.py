@@ -41,6 +41,8 @@ def run_hmc():
     
     # 3. Setup HMC Parameters
     theta_0 = model.get_weights() # shape (num_params,) - 1D vector
+    # Note: here .get_weights() is safe to use as we are not computing any gradients 
+    # with respect to this action (no harm in breaking the computational graph)
     M = 50       # Number of samples to keep
     N = 100      # Total HMC iterations
     L = 10       # Leapfrog steps

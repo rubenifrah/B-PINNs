@@ -38,8 +38,8 @@ Our objective is not just to replicate the findings of Yang et al., but to **pus
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/[your-username]/bpinn-project.git
-   cd bpinn-project
+   git clone https://github.com/rubenifrah/B-PINNs.git
+   cd B-PINNs
    ```
 
 2. **Install dependencies:**

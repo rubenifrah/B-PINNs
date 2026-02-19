@@ -50,4 +50,5 @@ def HMC_sampler(model, M, N, delta_t, theta_0, L, Mass_matrix = torch.eye(1)):
     # return the last M samples
     return states[:, -M:]
 
-        
+
+

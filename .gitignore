@@ -6,3 +6,9 @@ venv/
 # cache
 __pycache__/
 *.pyc
+
+# .tex files
+*.tex
+
+# markdown files (except README.md)
+workplan.md

@@ -40,23 +40,43 @@ def HMC_sampler(model, M, N, delta_t, theta_0, L, Mass_matrix=torch.eye(1), **kw
 
     for k in range(1, N + 1):
         r_tk_1 = torch.randn(dim_T)
-        theta_i = states[:, k-1]
-        r_i = r_tk_1.clone()
+        
+        # We must clone AND detach to prevent PyTorch from building 
+        # an infinitely long computation graph across HMC steps!
+        theta_i = states[:, k-1].clone().detach()
+        r_i = r_tk_1.clone().detach()
+        
         for i in range(L):
-            # leapfrog steps to update the momentum and position
-            # Passes **kwargs to model.gradient so it can evaluate potential energy
-            r_i = r_i - delta_t/2 * model.gradient(theta_i, **kwargs)
-            theta_i = theta_i + delta_t * r_i
-            r_i = r_i - delta_t/2 * model.gradient(theta_i, **kwargs)
+            # 1. Half step for momentum
+            # We get the gradient. The gradient function automatically handles its own internal graph.
+            grad_U_half = model.gradient(theta_i, **kwargs)
+            # Clip gradients to prevent explosion during leapfrog
+            grad_U_half = torch.clamp(grad_U_half, -10.0, 10.0)
+            
+            with torch.no_grad():
+                r_i = r_i - (delta_t / 2.0) * grad_U_half
+                
+                # 2. Full step for position
+                theta_i = theta_i + delta_t * r_i
+                
+            # 3. Half step for momentum
+            grad_U_full = model.gradient(theta_i, **kwargs)
+            grad_U_full = torch.clamp(grad_U_full, -10.0, 10.0)
+            
+            with torch.no_grad():
+                r_i = r_i - (delta_t / 2.0) * grad_U_full
         
         # Metropolis-Hastings step to accept or reject the proposal
         p = random.random()
         
-        # acceptance probability: exp(H_old - H_new)
-        # Passes **kwargs to model.hamiltonian for the same reason
+        # evaluate energies (we must NOT use no_grad because computing U(theta) 
+        # requires autograd to compute the PDE spatial derivatives!)
         H_old = model.hamiltonian(states[:, k-1], r_tk_1, **kwargs)
         H_new = model.hamiltonian(theta_i, r_i, **kwargs)
-        alpha = min(1, torch.exp(H_old - H_new))
+        
+        # safeguard exponent against overflow and drop graph tracking via .item()
+        H_diff = torch.clamp(H_old - H_new, max=20.0, min=-50.0).item()
+        alpha = min(1.0, math.exp(H_diff))
         
         if p < alpha:
             # accept the proposal
@@ -64,6 +84,7 @@ def HMC_sampler(model, M, N, delta_t, theta_0, L, Mass_matrix=torch.eye(1), **kw
         else:
             # reject the proposal
             states[:, k] = states[:, k-1]
+            
     # return the last M samples
     return states[:, -M:]
 

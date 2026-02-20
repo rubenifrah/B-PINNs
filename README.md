@@ -30,7 +30,7 @@ Our objective is not just to replicate the findings of Yang et al., but to **pus
   * `physics/`: Differentiable PDE residual formulations (e.g., `Poisson1D`).
   * `samplers/`: Custom implementations of **Hamiltonian Monte Carlo (HMC)**.
   * `utils/`: Metrics, visualization tools, and probabilistic plotting helpers.
-* `experiments/`: Executable scripts to run specific setups (e.g., `train_binn.py`, `train_pinn.py`).
+* `experiments/`: Executable scripts to run specific setups (e.g., `train_bpinn.py`, `train_pinn.py`).
 * `notebooks/`: Jupyter notebooks for exploratory data analysis, prototype testing, and generating report figures.
 * `deliverables/`: Contains the final NeurIPS-formatted report (LaTeX) and the presentation slides.
 
@@ -57,5 +57,5 @@ python experiments/train_pinn.py
 
 To run the from-scratch Bayesian PINN using our custom HMC sampler:
 ```bash
-python experiments/train_binn.py
+python experiments/train_bpinn.py
 ```

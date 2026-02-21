@@ -106,14 +106,22 @@ class BNN(nn.Module):
     # Here we also define a localized function `u_func_for_pde` to pass to the PDE problem.
     # =========================================================================
 
-    def potential_energy(self, theta, x_u, y_u, x_f, y_f, sigma_u, sigma_f, pde_problem):
+    def potential_energy(self, theta, x_b, y_b, x_f, y_f, sigma_u, sigma_f, pde_problem, x_u=None, y_u=None):
         """
         U(theta) = - [log p(data|theta) + log p(physics|theta) + log p(theta)]
         """
-        # 1. Data Likelihood (MSE on measurements)
-        # MUST use functional_forward to keep theta in the computation graph
-        u_pred = self.functional_forward(theta, x_u)
-        log_lik_u = -0.5 * torch.sum((u_pred - y_u)**2) / (sigma_u**2)
+        # 1. Data Likelihood (MSE on measurements) MUST use functional_forward
+        log_lik_data = 0.0
+        
+        # Boundary constraints likelihood
+        if x_b is not None and len(x_b) > 0:
+            b_pred = self.functional_forward(theta, x_b)
+            log_lik_data += -0.5 * torch.sum((b_pred - y_b)**2) / (sigma_u**2)
+            
+        # Interior observations likelihood (if any)
+        if x_u is not None and len(x_u) > 0:
+            u_pred = self.functional_forward(theta, x_u)
+            log_lik_data += -0.5 * torch.sum((u_pred - y_u)**2) / (sigma_u**2)
         
         # 2. Physics Likelihood (The PDE residual)
         x_f.requires_grad_(True)
@@ -131,7 +139,7 @@ class BNN(nn.Module):
         log_p = self.log_prior(theta)
         
         # Total U(theta) is the negative log posterior
-        return -(log_lik_u + log_lik_f + log_p)
+        return -(log_lik_data + log_lik_f + log_p)
     
     def hamiltonian(self, theta, r, **kwargs):
         """

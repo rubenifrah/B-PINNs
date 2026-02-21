@@ -178,3 +178,38 @@ def plot_1d_bpinn(model, samples, x_u, y_u, x_f, y_f=None, true_solution_func=No
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"Plot saved successfully to: {save_path}")
     plt.close()
+
+def plot_loss_curves(history, save_path="experiments/results/loss_curves.png"):
+    """
+    Plots the training loss curves for standard PINNs.
+    
+    Args:
+        history: Dictionary containing loss arrays ('total', 'mse_b', 'mse_u', 'mse_f')
+        save_path: Full path to save the generated plot.
+    """
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    
+    epochs = range(len(history['total']))
+    
+    plt.figure(figsize=(10, 6))
+    
+    # Use log scale for loss
+    plt.semilogy(epochs, history['total'], 'k-', label='Total Loss', linewidth=2)
+    plt.semilogy(epochs, history['mse_f'], 'g--', label='Physics Loss (MSE_f)', alpha=0.8)
+    
+    if 'mse_b' in history and any(v > 0 for v in history['mse_b']):
+        plt.semilogy(epochs, history['mse_b'], 'r:', label='Boundary Loss (MSE_b)', alpha=0.8)
+        
+    if 'mse_u' in history and any(v > 0 for v in history['mse_u']):
+        plt.semilogy(epochs, history['mse_u'], 'b-.', label='Observation Loss (MSE_u)', alpha=0.8)
+        
+    plt.xlabel('Epochs', fontsize=14)
+    plt.ylabel('Loss (Log Scale)', fontsize=14)
+    plt.title('PINN Training Loss Curves', fontsize=16)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.legend(fontsize=12)
+    
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"Loss curves plot saved successfully to: {save_path}")
+    plt.close()

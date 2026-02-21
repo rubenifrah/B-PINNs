@@ -43,25 +43,31 @@ class PINN(nn.Module):
         """Standard forward pass proxying the internal MLP."""
         return self.net(x)
 
-    def compute_loss(self, x_u, y_u, x_f, pde_problem):
+    def compute_loss(self, x_b, y_b, x_f, pde_problem, x_u=None, y_u=None, boundary_weight=1.0):
         """
-        Computes the total loss for standard PINN training: Loss_data + Loss_physics
+        Computes the total loss for standard PINN training: Loss_boundary + Loss_physics + [Loss_data]
         """
-        # 1. Data Loss
-        # If there's no data (pure forward problem depending on physics), x_u/y_u might be empty.
+        # 1. Boundary Loss
+        if x_b is not None and len(x_b) > 0:
+            b_pred = self.forward(x_b)
+            mse_b = torch.mean((b_pred - y_b)**2)
+        else:
+            mse_b = torch.tensor(0.0, device=x_f.device)
+
+        # 2. Interior Observation Data Loss (Inverse Problem)
         if x_u is not None and len(x_u) > 0:
             u_pred = self.forward(x_u)
             mse_u = torch.mean((u_pred - y_u)**2)
         else:
             mse_u = torch.tensor(0.0, device=x_f.device)
 
-        # 2. Physics Loss
+        # 3. Physics Loss
         x_f.requires_grad_(True)
         # We pass self.forward to the PDE problem to compute derivatives w.r.t x_f
         res_f = pde_problem.compute_residual(self.forward, x_f)
         mse_f = torch.mean(res_f**2)
         
         # Total Loss is the sum of component MSEs
-        total_loss = mse_u + mse_f
+        total_loss = (mse_b * boundary_weight) + mse_u + mse_f
         
-        return total_loss, mse_u, mse_f
+        return total_loss, mse_b, mse_u, mse_f

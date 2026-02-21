@@ -67,3 +67,35 @@ class InverseReactionDiffusion1D(PDEProblem):
         
         # Residual: u_xx - lambda * u - f = 0
         return u_xx - lambda_val * u - self.y_f
+
+class DampedHarmonicOscillator1D(PDEProblem):
+    """
+    1D Damped Harmonic Oscillator: m * u_tt + c * u_t + k * u = f(t)
+    where:
+        m * u_tt: inertia term
+        c * u_t: damping term (air resistance)
+        k * u: restoring force term (spring)
+        f(t): forcing term (external force)
+    """
+    def __init__(self, x_f, y_f, sigma_f, m, c, k, f=None):
+        super().__init__(x_f, y_f, sigma_f)
+        self.m = m
+        self.c = c
+        self.k = k
+        self.f = f
+
+    def compute_residual(self, u_func, t, params=None):
+        # t is a tensor of shape (N, 1) representing time
+        t.requires_grad_(True)
+        u = u_func(t)
+        
+        # First derivative: u_t
+        u_t = torch.autograd.grad(u, t, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+        
+        # Second derivative: u_tt
+        u_tt = torch.autograd.grad(u_t, t, grad_outputs=torch.ones_like(u_t), create_graph=True)[0]
+        
+        # Residual: m * u_tt + c * u_t + k * u - f(t) = 0
+        forcing = self.f(t) if self.f is not None else 0.0
+        return self.m * u_tt + self.c * u_t + self.k * u - forcing - self.y_f
+    

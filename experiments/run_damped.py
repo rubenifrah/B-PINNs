@@ -32,7 +32,7 @@ def run_damped_oscillator():
     u_b = torch.tensor([[1.0]], dtype=torch.float32)
     
     # Collocation points
-    t_f = torch.linspace(0, 5, 40).view(-1, 1).requires_grad_(True)
+    t_f = torch.linspace(0, 2, 40).view(-1, 1).requires_grad_(True)
     # Target for unforced DHO is 0 everywhere (no explicit forcing)
     u_f_target = torch.zeros_like(t_f)
     
@@ -87,6 +87,10 @@ def run_damped_oscillator():
     print("Generating Plots...")
     
     def true_damped(t):
+        if torch.is_tensor(t):
+            t = t.detach().cpu().numpy()
+        else:
+            t = np.array(t)
         omega_n = np.sqrt(k/m)
         zeta = c / (2 * np.sqrt(m * k))
         omega_d = omega_n * np.sqrt(1 - zeta**2)

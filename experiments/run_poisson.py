@@ -19,21 +19,26 @@ from src.utils.training import train_pinn, train_bpinn
 # =========================================================================
 
 def run_poisson_experiment():
+    lambd = 0.01 # Diffusion coefficient from paper
+
     # 1. Setup Data and Physics
     # Boundary data (x_b, y_b)
     x_b = torch.tensor([[-1.0], [1.0]], dtype=torch.float32)
-    y_b = torch.tensor([[0.0], [0.0]], dtype=torch.float32)
-    
+    y_b = torch.sin(6 * x_b)**3
+
+   
     # Collocation points (x_f), forcing term measurements (y_f)
-    x_f = torch.linspace(-1, 1, 20).view(-1, 1).requires_grad_(True)
-    y_f = - (torch.pi ** 2) * torch.sin(torch.pi * x_f).detach()
+    x_f = torch.linspace(-0.7, 0.7, 16).view(-1, 1).requires_grad_(True)
+    y_f = lambd * (108 * torch.sin(6 * x_f) * torch.cos(6 * x_f)**2 - 108 * torch.sin(6 * x_f)**3).detach()
     
     # Add noisy data mirroring the standard testing setup
-    y_b = y_b + torch.randn_like(y_b) * 0.1
-    y_f = y_f + torch.randn_like(y_f) * 0.1
+    noise_std = 0.01
+    y_b = y_b + torch.randn_like(y_b) * noise_std
+    y_f = y_f + torch.randn_like(y_f) * noise_std
+   
     
-    sigma_u = 0.1
-    sigma_f = 0.1
+    sigma_u = noise_std
+    sigma_f = noise_std
     
     pde_problem = Poisson1D(x_f, y_f, sigma_f)
     
@@ -71,10 +76,10 @@ def run_poisson_experiment():
         y_f=y_f,
         sigma_u=sigma_u,
         sigma_f=sigma_f,
-        M=100,
-        N=200,
-        L=20,
-        delta_t=0.01
+        M=1000,
+        N=17000,
+        L=50,
+        delta_t=0.1
     )
     
     # =========================================================================
@@ -84,7 +89,7 @@ def run_poisson_experiment():
     print("Generating plots...")
     
     def true_u(x):
-        return np.sin(np.pi * x)
+        return np.sin(6 * x)**3
         
     plot_loss_curves(
         history=history,

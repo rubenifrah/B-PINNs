@@ -22,8 +22,9 @@ def plot_1d_pinn(model, x_u, y_u, x_f, y_f=None, true_solution_func=None, title=
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
     # Generate continuous test points over the domain
-    x_min = float(torch.min(x_f))
-    x_max = float(torch.max(x_f))
+    x_min = float(x_f.detach().cpu().min()) 
+    x_max = float(x_f.detach().cpu().max()) 
+    
     margin = (x_max - x_min) * 0.05
     x_test = torch.linspace(x_min - margin, x_max + margin, 200).view(-1, 1)
     

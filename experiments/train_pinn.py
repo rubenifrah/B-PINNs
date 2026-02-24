@@ -9,7 +9,7 @@ import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.models.PINN import PINN
-from src.physics.PDEs import Poisson1D
+from src.physics.PDEs import Poisson1D, Burgers1D
 from src.utils.plotting import plot_1d_pinn
 
 # =========================================================================

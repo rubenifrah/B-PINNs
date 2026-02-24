@@ -18,12 +18,30 @@ from src.utils.training import train_pinn, train_bpinn
 # the 1D Damped Harmonic Oscillator problem without active forcing.
 # m u'' + c u' + k u = 0
 # =========================================================================
+def warm_start_bnn(pinn, bnn):
+    """Transfer weights from trained PINN to BNN, handling the 'net.' prefix mismatch."""
+    # Get the state dict from the PINN
+    pinn_state_dict = pinn.state_dict()
+    
+    # Create a new state dict with 'net.' removed from the keys
+    new_state_dict = {}
+    for key, value in pinn_state_dict.items():
+        # If the key starts with 'net.', strip it
+        new_key = key.replace('net.', '') 
+        new_state_dict[new_key] = value
+        
+    # Load the cleaned state dict into the BNN
+    bnn.load_state_dict(new_state_dict)
+    print("BNN successfully initialized with 'net.'-stripped PINN weights.")
+
 
 def run_damped_oscillator():
     # 1. Setup PDE and Physics Parameters
     m = 1.0
     k = 10.0
     c = 0.5
+    sigma_u = 0.00001
+    sigma_f = 0.001
     
     # 2. Setup Data
     # Time domain from t=0 to t=10
@@ -37,7 +55,7 @@ def run_damped_oscillator():
     u_f_target = torch.zeros_like(t_f)
     
     # Initialize PDE problem
-    pde_problem = DampedHarmonicOscillator1D(x_f=t_f, y_f=u_f_target, sigma_f=0.1, m=m, c=c, k=k, f=None)
+    pde_problem = DampedHarmonicOscillator1D(x_f=t_f, y_f=u_f_target, sigma_f=sigma_f, m=m, c=c, k=k, f=None)
     
     # =========================================================================
     # Standard PINN Baseline
@@ -53,9 +71,9 @@ def run_damped_oscillator():
         y_b=u_b,
         x_f=t_f,
         y_f=u_f_target,
-        epochs=1500,
+        epochs=2000,
         lr=2e-3,
-        boundary_weight=100.0
+        boundary_weight=70.0
     )
 
     # =========================================================================
@@ -63,8 +81,9 @@ def run_damped_oscillator():
     # =========================================================================
     print("\n========================================")
     print("Training B-PINN (HMC)...")
-    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[30, 30])
-    
+    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[30, 30, 30])
+    #warm_start_bnn(pinn_model, bnn_model)
+
     samples = train_bpinn(
         model=bnn_model,
         pde_problem=pde_problem,
@@ -72,13 +91,15 @@ def run_damped_oscillator():
         y_b=u_b,
         x_f=t_f,
         y_f=u_f_target,
-        sigma_u=0.01,  # Tight variance enforces initial condition heavily to prevent collapse
-        sigma_f=0.1,  
-        M=50,
-        N=150,
-        L=15,
+        sigma_u=sigma_u,  # Tight variance enforces initial condition heavily to prevent collapse
+        sigma_f=sigma_f,  
+        M=500,
+        N=200,
+        L=50,
         delta_t=0.001
     )
+
+
     
     # =========================================================================
     # Generate Plots

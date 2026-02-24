@@ -23,14 +23,14 @@ def run_poisson_experiment():
 
     # 1. Setup Data and Physics
     # Boundary data (x_b, y_b)
-    x_b = torch.tensor([[-1.0], [1.0]], dtype=torch.float32)
+    x_b = torch.tensor([[-0.7], [0.7]], dtype=torch.float32)
     y_b = torch.sin(6 * x_b)**3
 
    
     # Collocation points (x_f), forcing term measurements (y_f)
-    x_f = torch.linspace(-0.7, 0.7, 16).view(-1, 1).requires_grad_(True)
-    y_f = lambd * (108 * torch.sin(6 * x_f) * torch.cos(6 * x_f)**2 - 108 * torch.sin(6 * x_f)**3).detach()
-    
+    Nbr_colloc= 20
+    x_f = torch.linspace(-0.7, 0.7, Nbr_colloc).view(-1, 1).requires_grad_(True)
+    y_f = lambd * (216 * torch.sin(6 * x_f) * torch.cos(6 * x_f)**2 - 108 * torch.sin(6 * x_f)**3).detach()
     # Add noisy data mirroring the standard testing setup
     noise_std = 0.01
     y_b = y_b + torch.randn_like(y_b) * noise_std
@@ -40,14 +40,13 @@ def run_poisson_experiment():
     sigma_u = noise_std
     sigma_f = noise_std
     
-    pde_problem = Poisson1D(x_f, y_f, sigma_f)
-    
+    pde_problem = Poisson1D(x_f, y_f, sigma_f, lambd=lambd)    
     # =========================================================================
     # Standard PINN Baseline
     # =========================================================================
     print("========================================")
     print("Training Standard PINN baseline...")
-    pinn_model = PINN(input_dim=1, output_dim=1, hidden_dims=[20, 20])
+    pinn_model = PINN(input_dim=1, output_dim=1, hidden_dims=[50, 50])
     
     pinn_model, history = train_pinn(
         model=pinn_model,
@@ -56,7 +55,7 @@ def run_poisson_experiment():
         y_b=y_b,
         x_f=x_f,
         y_f=y_f,
-        epochs=1000,
+        epochs=2500,
         lr=1e-3
     )
 
@@ -65,8 +64,7 @@ def run_poisson_experiment():
     # =========================================================================
     print("\n========================================")
     print("Training B-PINN (HMC)...")
-    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[20, 20])
-    
+    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[50, 50])
     samples = train_bpinn(
         model=bnn_model,
         pde_problem=pde_problem,
@@ -76,10 +74,10 @@ def run_poisson_experiment():
         y_f=y_f,
         sigma_u=sigma_u,
         sigma_f=sigma_f,
-        M=1000,
-        N=17000,
-        L=50,
-        delta_t=0.1
+        M=200,       
+        N=200,      
+        L=20,       
+        delta_t=0.01
     )
     
     # =========================================================================

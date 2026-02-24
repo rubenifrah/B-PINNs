@@ -16,10 +16,12 @@ class PDEProblem:
 
 class Poisson1D(PDEProblem):
     """
-    1D Poisson equation: u_xx = f(x)
+    1D Poisson equation: lambda * u_xx = f(x)
     """
-    def __init__(self, x_f, y_f, sigma_f):
+    # Added lambd parameter with a default of 1.0 so it doesn't break your old tests
+    def __init__(self, x_f, y_f, sigma_f, lambd=1.0):
         super().__init__(x_f, y_f, sigma_f)
+        self.lambd = lambd
 
     def compute_residual(self, u_func, x, params=None):
         u = u_func(x)
@@ -27,8 +29,11 @@ class Poisson1D(PDEProblem):
         u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
         # Second derivative
         u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
-        return u_xx - self.y_f # residual: u_xx - f = 0
+        
+        # Apply the diffusion coefficient to the residual
+        return (self.lambd * u_xx) - self.y_f
 
+        
 class Burgers1D(PDEProblem):
     """
     1D Burgers equation: u_t + u * u_x = nu * u_xx

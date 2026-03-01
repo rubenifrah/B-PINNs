@@ -40,17 +40,28 @@ def run_damped_oscillator():
     m = 1.0
     k = 10.0
     c = 0.5
-    sigma_u = 0.00001
-    sigma_f = 0.001
+    sigma_u = 0.01
+    sigma_f = 0.01
     
     # 2. Setup Data
     # Time domain from t=0 to t=10
     # Boundary Conditions (Initial Conditions: u(0) = 1)
-    t_b = torch.tensor([[0.0]], dtype=torch.float32)
-    u_b = torch.tensor([[1.0]], dtype=torch.float32)
+    # 2. Setup Data
+    # Original point: u(0) = 1
+    t_0 = torch.tensor([[0.0]], dtype=torch.float32)
+    u_0 = torch.tensor([[1.0]], dtype=torch.float32)
+
+    # NEW: Synthetic velocity point: u(0.001) ≈ 1
+    # This forces the slope (u') to be near 0 at the start
+    t_v = torch.tensor([[0.001]], dtype=torch.float32)
+    u_v = torch.tensor([[1.0]], dtype=torch.float32)
+
+    # Combine into boundary tensors
+    t_b = torch.cat([t_0, t_v], dim=0)
+    u_b = torch.cat([u_0, u_v], dim=0)
     
     # Collocation points
-    t_f = torch.linspace(0, 2, 40).view(-1, 1).requires_grad_(True)
+    t_f = torch.linspace(0, 5, 100).view(-1, 1).requires_grad_(True)
     # Target for unforced DHO is 0 everywhere (no explicit forcing)
     u_f_target = torch.zeros_like(t_f)
     
@@ -62,7 +73,7 @@ def run_damped_oscillator():
     # =========================================================================
     print("========================================")
     print("Training Standard PINN baseline...")
-    pinn_model = PINN(input_dim=1, output_dim=1, hidden_dims=[30, 30])
+    pinn_model = PINN(input_dim=1, output_dim=1, hidden_dims=[30, 30,30])
     
     pinn_model, history = train_pinn(
         model=pinn_model,
@@ -71,7 +82,7 @@ def run_damped_oscillator():
         y_b=u_b,
         x_f=t_f,
         y_f=u_f_target,
-        epochs=2000,
+        epochs=10000,
         lr=2e-3,
         boundary_weight=70.0
     )
@@ -81,7 +92,7 @@ def run_damped_oscillator():
     # =========================================================================
     print("\n========================================")
     print("Training B-PINN (HMC)...")
-    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[30, 30, 30])
+    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[30, 30,30])
     #warm_start_bnn(pinn_model, bnn_model)
 
     samples = train_bpinn(
@@ -94,9 +105,9 @@ def run_damped_oscillator():
         sigma_u=sigma_u,  # Tight variance enforces initial condition heavily to prevent collapse
         sigma_f=sigma_f,  
         M=500,
-        N=200,
-        L=50,
-        delta_t=0.001
+        N=7000,
+        L=200,
+        delta_t=0.002
     )
 
 

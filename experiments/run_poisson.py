@@ -12,6 +12,7 @@ from src.models.BNN import BNN
 from src.physics.PDEs import Poisson1D
 from src.utils.plotting import plot_1d_pinn, plot_1d_bpinn, plot_loss_curves
 from src.utils.training import train_pinn, train_bpinn
+from src.utils.metrics import evaluate_uncertainty, compute_ece_and_plot
 
 # =========================================================================
 # This script provides a runnable comparison between PINN and B-PINN for 
@@ -74,11 +75,43 @@ def run_poisson_experiment():
         y_f=y_f,
         sigma_u=sigma_u,
         sigma_f=sigma_f,
-        M=200,       
+        M=500,       
         N=200,      
         L=20,       
         delta_t=0.01
     )
+    def true_u(x):
+        return np.sin(6 * x)**3
+        
+
+    # =========================================================================
+    # Evaluate Uncertainty Metrics (PICP & MPIW & NLL)
+    # =========================================================================
+    print("\n========================================")
+    print("Evaluating B-PINN Uncertainty Metrics...")
+    
+    # Create a dense test grid to evaluate properly
+    x_test = torch.linspace(-0.7, 0.7, 500).view(-1, 1)
+    # Get the true solution for those exact points
+    y_true_test = torch.tensor(true_u(x_test.numpy()), dtype=torch.float32)
+    
+    # Calculate using 2 standard deviations 
+    picp, mpiw, nll = evaluate_uncertainty(bnn_model, samples, x_test, y_true_test, n_std=2.0)
+    
+    print(f"Target Coverage: ~95.4% (using 2-sigma bounds)")
+    print(f"PICP: {picp * 100:.2f}% of the true solution is captured within bounds.")
+    print(f"MPIW: {mpiw:.4f} average width of the uncertainty interval.")
+    print(f"Mean NLL: {nll:.4f} (Lower is better)")
+
+    ece = compute_ece_and_plot(
+        model=bnn_model, 
+        samples=samples, 
+        x_test=x_test, 
+        y_true=y_true_test, 
+        num_bins=15, 
+        save_path="experiments/results/poisson_1d_reliability.png"
+    )
+    print(f"Expected Calibration Error (ECE): {ece:.4f}")
     
     # =========================================================================
     # Generate Plots
@@ -86,9 +119,7 @@ def run_poisson_experiment():
     print("\n========================================")
     print("Generating plots...")
     
-    def true_u(x):
-        return np.sin(6 * x)**3
-        
+
     plot_loss_curves(
         history=history,
         save_path="experiments/results/poisson_1d_loss.png"

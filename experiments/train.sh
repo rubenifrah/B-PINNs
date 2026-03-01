@@ -3,7 +3,7 @@
 #SBATCH -N 1
 #SBATCH -c 28
 #SBATCH --gres=gpu:1
-#SBATCH --time=00:30:00
+#SBATCH --time=02:30:00
 #SBATCH --mem=256G
 #SBATCH --account=m25146
 #SBATCH --job-name=generation
@@ -21,4 +21,4 @@ mkdir -p $outdir
 echo "Launching test for $name"
 
 # Run your training script
-python /home/peforcioli/B-PINNs/experiments/run_damped.py
+python /home/peforcioli/B-PINNs/experiments/run_poisson.py

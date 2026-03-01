@@ -1,0 +1,36 @@
+Launching test for generate
+========================================
+Training Standard PINN baseline...
+Starting standard PINN optimization for 2500 epochs...
+Epoch 0: Total Loss 0.67474 | MSE_b 0.35379 | MSE_u 0.00000 | MSE_f 0.32095
+Epoch 250: Total Loss 0.32125 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.32125
+Epoch 500: Total Loss 0.32092 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.32092
+Epoch 750: Total Loss 0.32023 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.32023
+Epoch 1000: Total Loss 0.29386 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.29386
+Epoch 1250: Total Loss 0.29270 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.29270
+Epoch 1500: Total Loss 0.22974 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.22974
+Epoch 1750: Total Loss 0.03960 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.03960
+Epoch 2000: Total Loss 0.00469 | MSE_b 0.00001 | MSE_u 0.00000 | MSE_f 0.00468
+Epoch 2250: Total Loss 0.00029 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.00029
+Training complete.
+Standard PINN Relative L2 Error: 0.4092
+
+========================================
+Training B-PINN (HMC)...
+Starting B-PINN HMC Sampling with 200 total transitions...
+Sampling complete. Gathered 201 samples of dimension 2701.
+Diagnostics: Samples Std Dev Mean = 0.19074, Max = 0.56156
+
+========================================
+Evaluating B-PINN Uncertainty Metrics...
+Target Coverage: ~95.4% (using 2-sigma bounds)
+PICP: 100.00% of the true solution is captured within bounds.
+MPIW: 1.3385 average width of the uncertainty interval.
+Mean NLL: -0.1276 (Lower is better)
+Expected Calibration Error (ECE): 0.1561
+
+========================================
+Generating plots...
+Loss curves plot saved successfully to: experiments/results/poisson_1d_loss.png
+Plot saved successfully to: experiments/results/poisson_1d_pinn_result.png
+Plot saved successfully to: experiments/results/poisson_1d_bpinn_result.png

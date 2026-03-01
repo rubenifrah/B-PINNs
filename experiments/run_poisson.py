@@ -12,7 +12,7 @@ from src.models.BNN import BNN
 from src.physics.PDEs import Poisson1D
 from src.utils.plotting import plot_1d_pinn, plot_1d_bpinn, plot_loss_curves
 from src.utils.training import train_pinn, train_bpinn
-from src.utils.metrics import evaluate_uncertainty, compute_ece_and_plot
+from src.utils.metrics import evaluate_uncertainty, compute_ece_and_plot, compute_relative_l2
 
 # =========================================================================
 # This script provides a runnable comparison between PINN and B-PINN for 
@@ -42,6 +42,9 @@ def run_poisson_experiment():
     sigma_f = noise_std
     
     pde_problem = Poisson1D(x_f, y_f, sigma_f, lambd=lambd)    
+
+    def true_u(x):
+        return np.sin(6 * x)**3
     # =========================================================================
     # Standard PINN Baseline
     # =========================================================================
@@ -59,6 +62,17 @@ def run_poisson_experiment():
         epochs=2500,
         lr=1e-3
     )
+
+    pinn_model.eval()
+    with torch.no_grad():
+        # Predict on the same x_test used for BNN
+        x_test = torch.linspace(-0.7, 0.7, 500).view(-1, 1)
+        y_pred_pinn = pinn_model(x_test)
+        y_true_test = torch.tensor(true_u(x_test.numpy()), dtype=torch.float32)
+        
+        l2_pinn = compute_relative_l2(y_pred_pinn, y_true_test)
+    
+    print(f"Standard PINN Relative L2 Error: {l2_pinn:.4f}")
 
     # =========================================================================
     # Bayesian PINN (HMC)
@@ -80,8 +94,7 @@ def run_poisson_experiment():
         L=20,       
         delta_t=0.01
     )
-    def true_u(x):
-        return np.sin(6 * x)**3
+
         
 
     # =========================================================================
@@ -90,18 +103,17 @@ def run_poisson_experiment():
     print("\n========================================")
     print("Evaluating B-PINN Uncertainty Metrics...")
     
-    # Create a dense test grid to evaluate properly
-    x_test = torch.linspace(-0.7, 0.7, 500).view(-1, 1)
-    # Get the true solution for those exact points
-    y_true_test = torch.tensor(true_u(x_test.numpy()), dtype=torch.float32)
+  
     
     # Calculate using 2 standard deviations 
-    picp, mpiw, nll = evaluate_uncertainty(bnn_model, samples, x_test, y_true_test, n_std=2.0)
+    picp, mpiw, nll,l2 = evaluate_uncertainty(bnn_model, samples, x_test, y_true_test, n_std=2.0)
     
     print(f"Target Coverage: ~95.4% (using 2-sigma bounds)")
     print(f"PICP: {picp * 100:.2f}% of the true solution is captured within bounds.")
     print(f"MPIW: {mpiw:.4f} average width of the uncertainty interval.")
     print(f"Mean NLL: {nll:.4f} (Lower is better)")
+    print(f"L2 relative error: {l2:.4f} ")
+
 
     ece = compute_ece_and_plot(
         model=bnn_model, 

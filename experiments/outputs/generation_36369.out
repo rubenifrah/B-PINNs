@@ -1,0 +1,15 @@
+Launching test for generate
+========================================
+Training Standard PINN baseline...
+Starting standard PINN optimization for 2500 epochs...
+Epoch 0: Total Loss 0.60137 | MSE_b 0.27964 | MSE_u 0.00000 | MSE_f 0.32172
+Epoch 250: Total Loss 0.32206 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.32206
+Epoch 500: Total Loss 0.32187 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.32187
+Epoch 750: Total Loss 0.32150 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.32150
+Epoch 1000: Total Loss 0.29925 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.29925
+Epoch 1250: Total Loss 0.24835 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.24835
+Epoch 1500: Total Loss 0.17494 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.17494
+Epoch 1750: Total Loss 0.16754 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.16754
+Epoch 2000: Total Loss 0.01047 | MSE_b 0.00001 | MSE_u 0.00000 | MSE_f 0.01046
+Epoch 2250: Total Loss 0.00532 | MSE_b 0.00000 | MSE_u 0.00000 | MSE_f 0.00532
+Training complete.

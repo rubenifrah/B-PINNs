@@ -14,6 +14,9 @@ class PDEProblem:
         """This must be overridden by specific PDEs"""
         raise NotImplementedError
 
+    def compute_boundary_derivatives(self, u_func):
+        return None
+
 class Poisson1D(PDEProblem):
     """
     1D Poisson equation: lambda * u_xx = f(x)
@@ -103,4 +106,11 @@ class DampedHarmonicOscillator1D(PDEProblem):
         # Residual: m * u_tt + c * u_t + k * u - f(t) = 0
         forcing = self.f(t) if self.f is not None else 0.0
         return self.m * u_tt + self.c * u_t + self.k * u - forcing - self.y_f
+
+    def compute_initial_velocity_residual(self, u_func):
+        t0 = torch.tensor([[0.0]], dtype=torch.float32, requires_grad=True)
+        u0 = u_func(t0)
+        # Calculate u_t at t=0
+        u_t0 = torch.autograd.grad(u0, t0, grad_outputs=torch.ones_like(u0), create_graph=True)[0]
+        return u_t0 # Residual is (u'(0) - 0)
     

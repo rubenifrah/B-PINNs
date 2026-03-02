@@ -42,6 +42,32 @@ def pretrain_network(model, x_u, y_u, x_f, y_f, pde_problem, n_steps=0):
     
     print(f"  Pretraining done. Final loss: {loss.item():.6f}")
 
+@torch.no_grad()
+def compute_rms_boundary_residual(model, x_u, y_u):
+    """
+    RMS of boundary residual: u(x_u) - y_u
+    """
+    model.eval()
+    u_pred = model(x_u)
+    residual = u_pred - y_u
+    rms = torch.sqrt(torch.mean(residual**2))
+    return rms.item()
+
+def compute_rms_forcing_residual(model, pde_problem, x_f):
+    """
+    RMS of forcing residual: u_xx(x_f) - y_f
+    """
+    model.eval()
+
+    # Important: fresh tensor with gradients enabled
+    x_f_ = x_f.detach().clone().requires_grad_(True)
+
+    # Compute residual via PDE class
+    residual = pde_problem.compute_residual(model, x_f_)
+
+    rms = torch.sqrt(torch.mean(residual**2))
+    return rms.item()
+
 # =========================================================================
 # Extension experiment: B-PINN with unknown noise levels.
 #
@@ -98,7 +124,26 @@ def run_hmc_unknown_noise():
     # pretrain_network(model, x_b, y_b, x_f, y_f, pde_problem)
 
     # Then initialize theta_0 from pretrained weights
+<<<<<<< Updated upstream
     theta_0 = model.get_initial_theta(log_sigma_f_init=-2.3)
+=======
+    # theta_0 = model.get_initial_theta(
+    #     log_sigma_u_init=-3.0,
+    #     log_sigma_f_init=-2.0
+    # )
+    rms_u = compute_rms_boundary_residual(model, x_u, y_u)
+    rms_f = compute_rms_forcing_residual(model, pde_problem, x_f)
+
+    # Prevent extremely small values (important for HMC stability)
+    sigma_u_init = max(0.05, rms_u)
+    sigma_f_init = max(0.1, rms_f)
+
+    theta_0 = model.get_initial_theta(
+        log_sigma_u_init=np.log(sigma_u_init),
+        log_sigma_f_init=np.log(sigma_f_init)
+    )
+
+>>>>>>> Stashed changes
     # ------------------------------------------------------------------
     # 3. Initialize theta_full
     # We start log_sigma at 0.0 => sigma = 1.0 (intentionally wrong)

@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.models.BNN import BNN
 from src.samplers.HMC import HMC_sampler
-from src.physics.PDEs import Poisson1D
+from src.physics.PDEs import Poisson1D, InverseReactionDiffusion1D
 from src.utils.plotting import plot_1d_bpinn
 
 # =========================================================================
@@ -40,13 +40,18 @@ def run_hmc():
     sigma_u = 0.1
     sigma_f = 0.1
     
-    pde_problem = Poisson1D(x_f, y_f, sigma_f)
+    pde_problem = InverseReactionDiffusion1D(x_f, y_f, sigma_f)
     
     # 2. Setup Model
     model = BNN(input_dim=1, output_dim=1, hidden_dims=[20, 20])
     
     # 3. Setup HMC Parameters
-    theta_0 = model.get_weights() # shape (num_params,) - 1D vector
+    # theta_0 = model.get_weights() # shape (num_params,) - 1D vector
+    #-------------
+    theta_nn0 = model.get_weights()              # 1D vector
+    lambda0   = torch.tensor([1.0])              # initial guess
+    theta_0   = torch.cat([theta_nn0, lambda0])  # joint state
+    #-------------
     # Note: here .get_weights() is safe to use as we are not computing any gradients 
     # with respect to this action (no harm in breaking the computational graph)
     M = 100       # Number of samples to keep

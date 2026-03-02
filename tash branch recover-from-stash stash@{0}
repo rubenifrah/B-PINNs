@@ -1,0 +1,17 @@
+A	experiments/results/bpinn_inverse.png
+A	experiments/results/bpinn_inverse_sigma_u.png
+M	experiments/results/bpinn_unknown_noise.png
+A	experiments/results/figure7_bpinn_hmc_inverse.png
+A	experiments/results/k_trace.png
+A	experiments/results/sigma_f_trace.png
+M	experiments/results/sigma_trace.png
+M	experiments/train_bpinn.py
+A	experiments/train_bpinn_inverse.py
+A	experiments/train_bpinn_inverse_sigma.py
+A	experiments/train_bpinn_unknown_f.py
+M	experiments/train_bpinn_unknown_noise.py
+A	src/models/BNN_Inverse.py
+A	src/models/BNN_Inverse_sigma.py
+A	src/models/BNN_f_noise.py
+A	src/models/BNN_unknown_f.py
+A	src/physics/PDEs_inverse.py

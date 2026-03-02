@@ -1,0 +1,24 @@
+Launching test for generate
+Network parameters:  2701
+Total HMC dimension: 2702  (+ log_sigma_u, log_sigma_f)
+
+Initial log_sigma_f: 0.000  => sigma_f = 1.000
+Fixed sigma_u = 0.1, True sigma_f = 0.1
+
+Starting HMC with 4000 iterations, keeping last 1000 samples...
+Chain mixing check - mean std across weights: 0.04449
+Sampling complete. Samples shape: torch.Size([2702, 1000])
+
+--- Inferred Noise Levels ---
+sigma_f | mean: 0.0981  std: 0.0046  (true: 0.1)
+
+========================================
+Evaluating B-PINN Uncertainty Metrics...
+Target Coverage: ~95.4% (using 2-sigma bounds)
+PICP: 100.00% of the true solution is captured within bounds.
+MPIW: 0.5070 average width of the uncertainty interval.
+Mean NLL: -0.6189 (Lower is better)
+L2 relative error: 0.2997 
+Expected Calibration Error (ECE): 0.1006
+
+Plot saved to experiments/results/bpinn_unknown_noise.png

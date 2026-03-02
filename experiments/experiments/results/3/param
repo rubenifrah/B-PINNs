@@ -13,8 +13,6 @@ from src.physics.PDEs import Poisson1D
 from src.models.PINN import PINN
 from src.physics.PDEs import Poisson1D
 import torch.optim as optim
-from src.utils.metrics import evaluate_uncertainty, compute_ece_and_plot, compute_relative_l2
-
 
 def pretrain_network(model, x_u, y_u, x_f, y_f, pde_problem, n_steps=0):
     """
@@ -74,7 +72,7 @@ def run_hmc_unknown_noise():
 
 
     # Collocation points (x_f), forcing term measurements (y_f)
-    Nbr_colloc= 100
+    Nbr_colloc= 60
     x_f = torch.linspace(-0.7, 0.7, Nbr_colloc).view(-1, 1).requires_grad_(True)
     y_f = lambd * (216 * torch.sin(6 * x_f) * torch.cos(6 * x_f)**2 - 108 * torch.sin(6 * x_f)**3).detach()
  
@@ -99,9 +97,23 @@ def run_hmc_unknown_noise():
     # print("Pretraining BNN weights via PINN loss...")
     # pretrain_network(model, x_b, y_b, x_f, y_f, pde_problem)
 
-    # Then initialize theta_0 
-    theta_0 = model.get_initial_theta(log_sigma_f_init=0)
-  
+    # Then initialize theta_0 from pretrained weights
+    theta_0 = model.get_initial_theta(log_sigma_f_init=-2.3)
+    # ------------------------------------------------------------------
+    # 3. Initialize theta_full
+    # We start log_sigma at 0.0 => sigma = 1.0 (intentionally wrong)
+    # to show the sampler recovers the true value.
+    # Alternatively use log(0.5) as a closer starting point.
+    # ------------------------------------------------------------------
+    # theta_0 = model.get_initial_theta(
+    # log_sigma_u_init=-2.0,
+    # log_sigma_f_init=-2.0
+    # )
+    # theta_0 = model.get_initial_theta(
+    #     log_sigma_u_init=0.0,   # starting guess: sigma_u = 1.0 (true: 0.1)
+    #     log_sigma_f_init=0.0    # starting guess: sigma_f = 1.0 (true: 0.1)
+    # )
+
     print(f"\nInitial log_sigma_f: {theta_0[model.num_params].item():.3f}  "
           f"=> sigma_f = {torch.exp(theta_0[model.num_params]).item():.3f}")
     print(f"Fixed sigma_u = {TRUE_SIGMA_U}, True sigma_f = {TRUE_SIGMA_F}\n")
@@ -111,8 +123,8 @@ def run_hmc_unknown_noise():
     # NOTE: sigma_u and sigma_f are NO LONGER passed as kwargs —
     # they are inferred from theta_full inside potential_energy().
     # ------------------------------------------------------------------
-    N       = 4000   # was 300
-    M       = 1000   # was 100
+    N       = 1500   # was 300
+    M       = 700   # was 100
    
     delta_t = 0.01  # slightly smaller
     L       = 10   # was 20
@@ -163,39 +175,6 @@ def run_hmc_unknown_noise():
     print(f"sigma_f | mean: {sigma_f_samples.mean().item():.4f}  "
           f"std: {sigma_f_samples.std().item():.4f}  "
           f"(true: {TRUE_SIGMA_F})")
-
-
-
-    # =========================================================================
-    # Evaluate Uncertainty Metrics (PICP & MPIW & NLL)
-    # =========================================================================
-    print("\n========================================")
-    print("Evaluating B-PINN Uncertainty Metrics...")
-    
-    x_test = torch.linspace(-0.7, 0.7, 200).view(-1, 1)
-    y_true_test = torch.tensor(true_u(x_test.numpy()), dtype=torch.float32)
-    theta_net_samples = samples[:model.num_params, :]
-    picp, mpiw, nll, l2 = evaluate_uncertainty(model, theta_net_samples, x_test, y_true_test, n_std=2.0)
-
-
-    print(f"Target Coverage: ~95.4% (using 2-sigma bounds)")
-    print(f"PICP: {picp * 100:.2f}% of the true solution is captured within bounds.")
-    print(f"MPIW: {mpiw:.4f} average width of the uncertainty interval.")
-    print(f"Mean NLL: {nll:.4f} (Lower is better)")
-    print(f"L2 relative error: {l2:.4f} ")
-   
-    
-   # Passing model (not bnn_model) and theta_net_samples
-    ece = compute_ece_and_plot(
-        model=model, 
-        samples=theta_net_samples, 
-        x_test=x_test, 
-        y_true=y_true_test, 
-        num_bins=15, 
-        save_path="experiments/results/poisson_1d_reliability.png"
-    )
-    print(f"Expected Calibration Error (ECE): {ece:.4f}")
-    
 
     # ------------------------------------------------------------------
     # 6. Plot results

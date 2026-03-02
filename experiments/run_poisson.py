@@ -29,7 +29,7 @@ def run_poisson_experiment():
 
    
     # Collocation points (x_f), forcing term measurements (y_f)
-    Nbr_colloc= 20
+    Nbr_colloc= 80
     x_f = torch.linspace(-0.7, 0.7, Nbr_colloc).view(-1, 1).requires_grad_(True)
     y_f = lambd * (216 * torch.sin(6 * x_f) * torch.cos(6 * x_f)**2 - 108 * torch.sin(6 * x_f)**3).detach()
     # Add noisy data mirroring the standard testing setup
@@ -89,9 +89,9 @@ def run_poisson_experiment():
         y_f=y_f,
         sigma_u=sigma_u,
         sigma_f=sigma_f,
-        M=500,       
-        N=200,      
-        L=20,       
+        M=2000,       
+        N=1000,      
+        L=10,       
         delta_t=0.01
     )
 

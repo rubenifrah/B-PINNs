@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "/home/peforcioli/B-PINNs/experiments/train_bpinn_unknown_noise.py", line 244, in <module>
-    run_hmc_unknown_noise()
-  File "/home/peforcioli/B-PINNs/experiments/train_bpinn_unknown_noise.py", line 144, in run_hmc_unknown_noise
-    samples = HMC_sampler(
-  File "/home/peforcioli/B-PINNs/src/samplers/HMC.py", line 49, in HMC_sampler
-    for i in range(L):
-TypeError: 'float' object cannot be interpreted as an integer

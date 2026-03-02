@@ -1,0 +1,20 @@
+Launching test for generate
+Network parameters:  2701
+Total HMC dimension: 2703  (+ log_sigma_u, log_sigma_f)
+Pretraining BNN weights via PINN loss...
+  Pretrain step 0, loss: 0.639308
+  Pretraining done. Final loss: 0.311171
+
+Initial log_sigma_u: -2.300  => sigma_u = 0.100
+Initial log_sigma_f: -2.300  => sigma_f = 0.100
+True sigma_u = 0.1, True sigma_f = 0.1
+
+Starting HMC with 15000 iterations, keeping last 10000 samples...
+Chain mixing check - mean std across weights: 0.90169
+Sampling complete. Samples shape: torch.Size([2703, 10000])
+
+--- Inferred Noise Levels ---
+sigma_u | mean: 0.7533  std: 0.5660  (true: 0.1)
+sigma_f | mean: 0.2776  std: 0.1171  (true: 0.1)
+
+Plot saved to experiments/results/bpinn_unknown_noise.png

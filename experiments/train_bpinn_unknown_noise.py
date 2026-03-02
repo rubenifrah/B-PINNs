@@ -14,7 +14,7 @@ from src.models.PINN import PINN
 from src.physics.PDEs import Poisson1D
 import torch.optim as optim
 
-def pretrain_network(model, x_u, y_u, x_f, y_f, pde_problem, n_steps=2000):
+def pretrain_network(model, x_u, y_u, x_f, y_f, pde_problem, n_steps=0):
     """
     Pretrain the BNN weights using standard PINN loss before HMC.
     This gives HMC a much better starting point in weight space.
@@ -57,44 +57,48 @@ TRUE_SIGMA_U = 0.1
 TRUE_SIGMA_F = 0.1
 
 def run_hmc_unknown_noise():
+    lambd = 0.01 # Diffusion coefficient from paper
 
     # ------------------------------------------------------------------
     # 1. Generate data — identical setup to train_bpinn.py
     # ------------------------------------------------------------------
     torch.manual_seed(42)
 
-    # Boundary / solution data
-    x_u = torch.tensor([[-1.0], [1.0]], dtype=torch.float32)
-    y_u = torch.tensor([[0.0], [0.0]], dtype=torch.float32)
-    y_u = y_u + torch.randn_like(y_u) * TRUE_SIGMA_U
+    # 1. Setup Data and Physics
+    # Boundary data (x_b, y_b)
+    x_b = torch.tensor([[-0.7], [0.7]], dtype=torch.float32)
+    y_b = torch.sin(6 * x_b)**3
+    y_b = y_b + torch.randn_like(y_b) * TRUE_SIGMA_U # add noise
 
-    # Collocation / forcing term data
-    x_f = torch.linspace(-1, 1, 20).view(-1, 1).requires_grad_(True)
-    y_f = -(torch.pi ** 2) * torch.sin(torch.pi * x_f).detach()
+
+    # Collocation points (x_f), forcing term measurements (y_f)
+    Nbr_colloc= 60
+    x_f = torch.linspace(-0.7, 0.7, Nbr_colloc).view(-1, 1).requires_grad_(True)
+    y_f = lambd * (216 * torch.sin(6 * x_f) * torch.cos(6 * x_f)**2 - 108 * torch.sin(6 * x_f)**3).detach()
+ 
     y_f = y_f + torch.randn_like(y_f) * TRUE_SIGMA_F
+   
 
-    # PDE problem — sigma_f argument is kept for compatibility but will NOT
-    # be used as a fixed value (the model infers it instead)
-    pde_problem = Poisson1D(x_f, y_f, sigma_f=None)
+
+    pde_problem = Poisson1D(x_f, y_f, sigma_f=None, lambd=lambd)
+    def true_u(x):
+        return np.sin(6 * x)**3    
+
 
     # ------------------------------------------------------------------
     # 2. Setup model
     # ------------------------------------------------------------------
-    model = BNN_UnknownNoise(input_dim=1, output_dim=1, hidden_dims=[20, 20])
+    model = BNN_UnknownNoise(input_dim=1, output_dim=1, hidden_dims=[50, 50])
 
     print(f"Network parameters:  {model.num_params}")
     print(f"Total HMC dimension: {model.total_params}  (+ log_sigma_u, log_sigma_f)")
 
     # Pretrain first
-    print("Pretraining BNN weights via PINN loss...")
-    pretrain_network(model, x_u, y_u, x_f, y_f, pde_problem)
+    # print("Pretraining BNN weights via PINN loss...")
+    # pretrain_network(model, x_b, y_b, x_f, y_f, pde_problem)
 
     # Then initialize theta_0 from pretrained weights
-    theta_0 = model.get_initial_theta(
-        log_sigma_u_init=-2.3,  # exp(-2.3) ≈ 0.1
-        log_sigma_f_init=-2.3
-    )
-
+    theta_0 = model.get_initial_theta(log_sigma_f_init=-2.3)
     # ------------------------------------------------------------------
     # 3. Initialize theta_full
     # We start log_sigma at 0.0 => sigma = 1.0 (intentionally wrong)
@@ -110,21 +114,20 @@ def run_hmc_unknown_noise():
     #     log_sigma_f_init=0.0    # starting guess: sigma_f = 1.0 (true: 0.1)
     # )
 
-    print(f"\nInitial log_sigma_u: {theta_0[model.num_params].item():.3f}  "
-          f"=> sigma_u = {torch.exp(theta_0[model.num_params]).item():.3f}")
-    print(f"Initial log_sigma_f: {theta_0[model.num_params+1].item():.3f}  "
-          f"=> sigma_f = {torch.exp(theta_0[model.num_params+1]).item():.3f}")
-    print(f"True sigma_u = {TRUE_SIGMA_U}, True sigma_f = {TRUE_SIGMA_F}\n")
+    print(f"\nInitial log_sigma_f: {theta_0[model.num_params].item():.3f}  "
+          f"=> sigma_f = {torch.exp(theta_0[model.num_params]).item():.3f}")
+    print(f"Fixed sigma_u = {TRUE_SIGMA_U}, True sigma_f = {TRUE_SIGMA_F}\n")
 
     # ------------------------------------------------------------------
     # 4. HMC parameters
     # NOTE: sigma_u and sigma_f are NO LONGER passed as kwargs —
     # they are inferred from theta_full inside potential_energy().
     # ------------------------------------------------------------------
-    N       = 2000   # was 300
-    M       = 500    # was 100
-    L       = 10     # was 20
-    delta_t = 0.001  # slightly smaller
+    N       = 20000   # was 300
+    M       = 5000    # was 100
+   
+    delta_t = 0.005  # slightly smaller
+    L       = 80   # was 20
     # M       = 100    # samples to keep
     # N       = 300    # total HMC iterations (more than baseline due to extra dims)
     # L       = 20     # leapfrog steps
@@ -140,11 +143,12 @@ def run_hmc_unknown_noise():
         theta_0=theta_0,
         L=L,
         # kwargs passed to potential_energy — note: no sigma_u / sigma_f here
-        x_u=x_u,
-        y_u=y_u,
+        x_u=x_b,
+        y_u=y_b,
         x_f=x_f,
         y_f=y_f,
-        pde_problem=pde_problem
+        pde_problem=pde_problem,
+        sigma_u = TRUE_SIGMA_U
     )
 
     # Check acceptance rate proxy — if std is near zero, chain is stuck
@@ -154,10 +158,10 @@ def run_hmc_unknown_noise():
 
     # Also plot the sigma trace to see if it moved
     plt.figure()
-    plt.plot(samples[model.num_params, :].numpy(), label='log_sigma_u trace')
-    plt.plot(samples[model.num_params+1, :].numpy(), label='log_sigma_f trace')
+    # log_sigma_f is now at index model.num_params
+    plt.plot(samples[model.num_params, :].numpy(), label='log_sigma_f trace', color='orange')
     plt.legend()
-    plt.title("Sigma trace — should look like noise, not a flat line")
+    plt.title("Sigma_f trace — should look like noise, not a flat line")
     plt.savefig("experiments/results/sigma_trace.png")
 
     print(f"Sampling complete. Samples shape: {samples.shape}")
@@ -165,12 +169,9 @@ def run_hmc_unknown_noise():
     # ------------------------------------------------------------------
     # 5. Extract and report inferred noise levels
     # ------------------------------------------------------------------
-    sigma_u_samples, sigma_f_samples = model.extract_sigma_samples(samples)
+    sigma_f_samples = model.extract_sigma_samples(samples)
 
     print("\n--- Inferred Noise Levels ---")
-    print(f"sigma_u | mean: {sigma_u_samples.mean().item():.4f}  "
-          f"std: {sigma_u_samples.std().item():.4f}  "
-          f"(true: {TRUE_SIGMA_U})")
     print(f"sigma_f | mean: {sigma_f_samples.mean().item():.4f}  "
           f"std: {sigma_f_samples.std().item():.4f}  "
           f"(true: {TRUE_SIGMA_F})")
@@ -178,8 +179,8 @@ def run_hmc_unknown_noise():
     # ------------------------------------------------------------------
     # 6. Plot results
     # ------------------------------------------------------------------
-    x_test = torch.linspace(-1, 1, 200).view(-1, 1)
-    u_true = np.sin(np.pi * x_test.numpy())
+    x_test = torch.linspace(-0.7, 0.7, 200).view(-1, 1)
+    u_true = true_u(x_test)
 
     # Collect posterior predictive samples
     u_preds = []
@@ -202,22 +203,22 @@ def run_hmc_unknown_noise():
     ax.plot(x_np, u_mean, 'r--', label='Posterior mean', linewidth=2)
     ax.fill_between(x_np, u_mean - 2*u_std, u_mean + 2*u_std,
                     alpha=0.3, color='cyan', label='±2 std')
-    ax.scatter(x_u.numpy(), y_u.numpy(), c='blue', zorder=5, label='Noisy observations')
+    ax.scatter(x_b.numpy(), y_b.numpy(), c='blue', zorder=5, label='Noisy observations')
     ax.set_title("B-PINN Solution (Unknown Noise)")
     ax.set_xlabel("x")
     ax.set_ylabel("u(x)")
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    # Right: Posterior distributions over sigma_u and sigma_f
+    # Right: Posterior distribution over sigma_f
     ax = axes[1]
-    ax.hist(sigma_u_samples.numpy(), bins=20, alpha=0.6,
-            color='blue', label=f'σ_u  (true={TRUE_SIGMA_U})', density=True)
     ax.hist(sigma_f_samples.numpy(), bins=20, alpha=0.6,
-            color='orange', label=f'σ_f  (true={TRUE_SIGMA_F})', density=True)
-    ax.axvline(TRUE_SIGMA_U, color='blue', linestyle='--', linewidth=2)
-    ax.axvline(TRUE_SIGMA_F, color='orange', linestyle='--', linewidth=2)
-    ax.set_title("Posterior over Inferred Noise Levels")
+            color='orange', label=f'Inferred σ_f', density=True)
+    ax.axvline(TRUE_SIGMA_F, color='orange', linestyle='--', linewidth=2, label=f'True σ_f ({TRUE_SIGMA_F})')
+    # We can just plot a blue line for the fixed sigma_u so it's still on the graph
+    ax.axvline(TRUE_SIGMA_U, color='blue', linestyle='-', linewidth=2, label=f'Fixed σ_u ({TRUE_SIGMA_U})')
+    
+    ax.set_title("Posterior over Noise Levels")
     ax.set_xlabel("σ")
     ax.set_ylabel("Density")
     ax.legend()

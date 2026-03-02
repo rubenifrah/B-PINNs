@@ -1,0 +1,4 @@
+Launching test for generate
+Network parameters:  2701
+Total HMC dimension: 2703  (+ log_sigma_u, log_sigma_f)
+Pretraining BNN weights via PINN loss...

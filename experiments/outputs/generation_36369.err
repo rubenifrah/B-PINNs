@@ -1,6 +1,0 @@
-Traceback (most recent call last):
-  File "/home/peforcioli/B-PINNs/experiments/run_poisson.py", line 160, in <module>
-    run_poisson_experiment()
-  File "/home/peforcioli/B-PINNs/experiments/run_poisson.py", line 68, in run_poisson_experiment
-    y_true_test = torch.tensor(true_u(x_test.numpy()), dtype=torch.float32)
-UnboundLocalError: local variable 'true_u' referenced before assignment

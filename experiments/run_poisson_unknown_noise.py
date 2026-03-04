@@ -8,39 +8,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.models.BNN_unknown_noise import BNN_UnknownNoise
 from src.samplers.HMC import HMC_sampler
-from src.physics.PDEs import Poisson1D
-
 from src.models.PINN import PINN
 from src.physics.PDEs import Poisson1D
 import torch.optim as optim
-
-def pretrain_network(model, x_u, y_u, x_f, y_f, pde_problem, n_steps=0):
-    """
-    Pretrain the BNN weights using standard PINN loss before HMC.
-    This gives HMC a much better starting point in weight space.
-    """
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    
-    for step in range(n_steps):
-        optimizer.zero_grad()
-        
-        # Data loss
-        u_pred = model.forward(x_u)
-        loss_u = torch.mean((u_pred - y_u)**2)
-        
-        # Physics loss
-        x_f_grad = x_f.clone().requires_grad_(True)
-        res = pde_problem.compute_residual(model.forward, x_f_grad)
-        loss_f = torch.mean(res**2)
-        
-        loss = loss_u + loss_f
-        loss.backward()
-        optimizer.step()
-        
-        if step % 500 == 0:
-            print(f"  Pretrain step {step}, loss: {loss.item():.6f}")
-    
-    print(f"  Pretraining done. Final loss: {loss.item():.6f}")
+from src.utils.metrics import evaluate_uncertainty, compute_ece_and_plot, compute_relative_l2
 
 # =========================================================================
 # Extension experiment: B-PINN with unknown noise levels.
@@ -53,11 +24,11 @@ def pretrain_network(model, x_u, y_u, x_f, y_f, pde_problem, n_steps=0):
 # Compare against train_bpinn.py where sigma is fixed and known.
 # =========================================================================
 
-TRUE_SIGMA_U = 0.1
-TRUE_SIGMA_F = 0.1
+TRUE_SIGMA_U = 0.01
+TRUE_SIGMA_F = 0.01
 
 def run_hmc_unknown_noise():
-    lambd = 0.01 # Diffusion coefficient from paper
+    lambd = 0.01  # Diffusion coefficient from paper
 
     # ------------------------------------------------------------------
     # 1. Generate data — identical setup to train_bpinn.py
@@ -68,52 +39,34 @@ def run_hmc_unknown_noise():
     # Boundary data (x_b, y_b)
     x_b = torch.tensor([[-0.7], [0.7]], dtype=torch.float32)
     y_b = torch.sin(6 * x_b)**3
-    y_b = y_b + torch.randn_like(y_b) * TRUE_SIGMA_U # add noise
-
+    y_b = y_b + torch.randn_like(y_b) * TRUE_SIGMA_U  # add noise
 
     # Collocation points (x_f), forcing term measurements (y_f)
-    Nbr_colloc= 60
+    Nbr_colloc = 80
     x_f = torch.linspace(-0.7, 0.7, Nbr_colloc).view(-1, 1).requires_grad_(True)
     y_f = lambd * (216 * torch.sin(6 * x_f) * torch.cos(6 * x_f)**2 - 108 * torch.sin(6 * x_f)**3).detach()
- 
     y_f = y_f + torch.randn_like(y_f) * TRUE_SIGMA_F
-   
-
 
     pde_problem = Poisson1D(x_f, y_f, sigma_f=None, lambd=lambd)
+    
     def true_u(x):
         return np.sin(6 * x)**3    
-
 
     # ------------------------------------------------------------------
     # 2. Setup model
     # ------------------------------------------------------------------
-    model = BNN_UnknownNoise(input_dim=1, output_dim=1, hidden_dims=[50, 50])
+    # Set the mean of the log-sigma prior
+    mu_log_sigma = -2
+    model = BNN_UnknownNoise(input_dim=1, output_dim=1, hidden_dims=[50, 50], mu_log_sigma=mu_log_sigma)
 
     print(f"Network parameters:  {model.num_params}")
     print(f"Total HMC dimension: {model.total_params}  (+ log_sigma_u, log_sigma_f)")
 
     # Pretrain first
-    # print("Pretraining BNN weights via PINN loss...")
-    # pretrain_network(model, x_b, y_b, x_f, y_f, pde_problem)
-
-    # Then initialize theta_0 from pretrained weights
-    theta_0 = model.get_initial_theta(log_sigma_f_init=-2.3)
-    # ------------------------------------------------------------------
-    # 3. Initialize theta_full
-    # We start log_sigma at 0.0 => sigma = 1.0 (intentionally wrong)
-    # to show the sampler recovers the true value.
-    # Alternatively use log(0.5) as a closer starting point.
-    # ------------------------------------------------------------------
-    # theta_0 = model.get_initial_theta(
-    # log_sigma_u_init=-2.0,
-    # log_sigma_f_init=-2.0
-    # )
-    # theta_0 = model.get_initial_theta(
-    #     log_sigma_u_init=0.0,   # starting guess: sigma_u = 1.0 (true: 0.1)
-    #     log_sigma_f_init=0.0    # starting guess: sigma_f = 1.0 (true: 0.1)
-    # )
-
+    
+    # Then initialize theta_0 
+    theta_0 = model.get_initial_theta(log_sigma_f_init=-2)
+  
     print(f"\nInitial log_sigma_f: {theta_0[model.num_params].item():.3f}  "
           f"=> sigma_f = {torch.exp(theta_0[model.num_params]).item():.3f}")
     print(f"Fixed sigma_u = {TRUE_SIGMA_U}, True sigma_f = {TRUE_SIGMA_F}\n")
@@ -123,16 +76,11 @@ def run_hmc_unknown_noise():
     # NOTE: sigma_u and sigma_f are NO LONGER passed as kwargs —
     # they are inferred from theta_full inside potential_energy().
     # ------------------------------------------------------------------
-    N       = 2000   # was 300
-    M       = 700   # was 100
-   
-    delta_t = 0.01  # slightly smaller
-    L       = 10   # was 20
-    # M       = 100    # samples to keep
-    # N       = 300    # total HMC iterations (more than baseline due to extra dims)
-    # L       = 20     # leapfrog steps
-    # delta_t = 0.005  # slightly smaller step size due to higher dimensionality
-
+    N = 7000   
+    M = 1000   
+    delta_t = 0.01  
+    L = 10   
+    
     print(f"Starting HMC with {N} iterations, keeping last {M} samples...")
 
     samples = HMC_sampler(
@@ -175,6 +123,35 @@ def run_hmc_unknown_noise():
     print(f"sigma_f | mean: {sigma_f_samples.mean().item():.4f}  "
           f"std: {sigma_f_samples.std().item():.4f}  "
           f"(true: {TRUE_SIGMA_F})")
+
+    # =========================================================================
+    # Evaluate Uncertainty Metrics (PICP & MPIW & NLL)
+    # =========================================================================
+    print("\n========================================")
+    print("Evaluating B-PINN Uncertainty Metrics...")
+    
+    x_test = torch.linspace(-0.7, 0.7, 200).view(-1, 1)
+    y_true_test = torch.tensor(true_u(x_test.numpy()), dtype=torch.float32)
+    theta_net_samples = samples[:model.num_params, :]
+    picp, mpiw, nll, l2 = evaluate_uncertainty(model, theta_net_samples, x_test, y_true_test, n_std=2.0)
+
+
+    print(f"Target Coverage: ~95.4% (using 2-sigma bounds)")
+    print(f"PICP: {picp * 100:.2f}% of the true solution is captured within bounds.")
+    print(f"MPIW: {mpiw:.4f} average width of the uncertainty interval.")
+    print(f"Mean NLL: {nll:.4f} (Lower is better)")
+    print(f"L2 relative error: {l2:.4f}")
+    
+    # Passing model (not bnn_model) and theta_net_samples
+    ece = compute_ece_and_plot(
+        model=model, 
+        samples=theta_net_samples, 
+        x_test=x_test, 
+        y_true=y_true_test, 
+        num_bins=15, 
+        save_path="experiments/results/poisson_1d_reliability.png"
+    )
+    print(f"Expected Calibration Error (ECE): {ece:.4f}")
 
     # ------------------------------------------------------------------
     # 6. Plot results

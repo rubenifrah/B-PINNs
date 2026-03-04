@@ -60,42 +60,6 @@ def true_f(x, lambda_val=LAMBDA_VAL, k=TRUE_K):
     return f.detach()
 
 
-# =========================================================================
-# Pretraining
-# =========================================================================
-def pretrain_network(model, x_u, y_u, x_b, y_b, x_f, y_f,
-                     pde_problem, n_steps=3000):
-    """
-    Pretrain BNN weights using PINN loss (Adam) before HMC.
-    During pretraining, k is fixed at its true value to warm up the weights.
-    This is necessary because HMC in 482 dimensions rejects all proposals
-    when starting from random weights (energy landscape too rough).
-    """
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    k_tensor  = torch.tensor([TRUE_K], dtype=torch.float32)
-
-    for step in range(n_steps):
-        optimizer.zero_grad()
-
-        u_pred = model.forward(x_u)
-        loss_u = torch.mean((u_pred - y_u) ** 2)
-
-        b_pred = model.forward(x_b)
-        loss_b = torch.mean((b_pred - y_b) ** 2)
-
-        x_f_g  = x_f.clone().detach().requires_grad_(True)
-        res_f  = pde_problem.compute_residual(model.forward, x_f_g, params=k_tensor)
-        loss_f = torch.mean(res_f ** 2)
-
-        loss = loss_u + loss_b + loss_f
-        loss.backward()
-        optimizer.step()
-
-        if step % 1000 == 0:
-            print(f"  [Pretrain] step {step:4d} | loss: {loss.item():.6f}")
-
-    print(f"  [Pretrain] Done. Final loss: {loss.item():.6f}\n")
-
 
 # =========================================================================
 # Run one noise case
@@ -120,15 +84,17 @@ def run_one_case(sigma_f, sigma_u, sigma_b, case_label):
     # Data generation (Section 3.3.1)
     # ------------------------------------------------------------------
     # D_b: 2 boundary sensors at x = -0.7 and x = 0.7
+  
     x_b = torch.tensor([[-0.7], [0.7]], dtype=torch.float32)
     y_b = true_u(x_b) + torch.randn_like(x_b) * sigma_b
 
+    N_u = 6
     # D_u: 6 interior sensors uniformly placed in (-0.7, 0.7)
-    x_u = torch.linspace(-0.7, 0.7, 8)[1:-1].view(-1, 1)  # 6 points
+    x_u = torch.linspace(-0.7, 0.7, N_u)[1:-1].view(-1, 1)  # 6 points
     y_u = true_u(x_u) + torch.randn(x_u.shape) * sigma_u
 
-    # D_f: 32 equidistant sensors for f
-    x_f = torch.linspace(-0.7, 0.7, 32).view(-1, 1).requires_grad_(True)
+    N_f = 32
+    x_f = torch.linspace(-0.7, 0.7, N_f).view(-1, 1).requires_grad_(True)
     y_f = true_f(x_f.detach())
     y_f = y_f + torch.randn_like(y_f) * sigma_f
 
@@ -139,11 +105,10 @@ def run_one_case(sigma_f, sigma_u, sigma_b, case_label):
     # ------------------------------------------------------------------
     # Model and pretraining
     # ------------------------------------------------------------------
-    model = BNN_Inverse(input_dim=1, output_dim=1, hidden_dims=[20, 20])
+    model = BNN_Inverse(input_dim=1, output_dim=1, hidden_dims=[50, 50])
     print(f"Network params: {model.num_params}, Total HMC dim: {model.total_params}\n")
 
     print("Step 1: Pretraining...")
-    pretrain_network(model, x_u, y_u, x_b, y_b, x_f, y_f, pde_problem)
 
     # ------------------------------------------------------------------
     # HMC sampling
@@ -153,10 +118,10 @@ def run_one_case(sigma_f, sigma_u, sigma_b, case_label):
 
     print(f"Step 2: HMC sampling (init k={K_INIT}, true k={TRUE_K})...")
 
-    M       = 500
-    N       = 2000
-    L       = 10
-    delta_t = 0.001
+    M       = 2000   # Increased from 500
+    N       = 15000   # Increased from 2000 (Burn-in)
+    L       = 50     # More leapfrog steps can help explore further per iteration
+    delta_t = 0.1 # Smaller step size to avoid immediate divergence
 
     samples = HMC_sampler(
         model   = model,

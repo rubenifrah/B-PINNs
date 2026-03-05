@@ -64,7 +64,7 @@ def true_f(x, lambda_val=LAMBDA_VAL, k=TRUE_K):
 # =========================================================================
 # Run one noise case
 # =========================================================================
-def run_one_case(sigma_f, sigma_u, sigma_b, case_label):
+def run_one_case(sigma_f, sigma_u, sigma_b, case_label, N_u=6, N_f=32, M=2000, N=15000, L=50, delta_t=0.1):
     """
     Runs the full B-PINN-HMC experiment for one noise configuration.
 
@@ -88,12 +88,10 @@ def run_one_case(sigma_f, sigma_u, sigma_b, case_label):
     x_b = torch.tensor([[-0.7], [0.7]], dtype=torch.float32)
     y_b = true_u(x_b) + torch.randn_like(x_b) * sigma_b
 
-    N_u = 6
-    # D_u: 6 interior sensors uniformly placed in (-0.7, 0.7)
-    x_u = torch.linspace(-0.7, 0.7, N_u)[1:-1].view(-1, 1)  # 6 points
+    # D_u: N_u interior sensors uniformly placed in (-0.7, 0.7)
+    x_u = torch.linspace(-0.7, 0.7, N_u)[1:-1].view(-1, 1)
     y_u = true_u(x_u) + torch.randn(x_u.shape) * sigma_u
 
-    N_f = 32
     x_f = torch.linspace(-0.7, 0.7, N_f).view(-1, 1).requires_grad_(True)
     y_f = true_f(x_f.detach())
     y_f = y_f + torch.randn_like(y_f) * sigma_f
@@ -117,11 +115,6 @@ def run_one_case(sigma_f, sigma_u, sigma_b, case_label):
     theta_0 = model.get_initial_theta(k_init=K_INIT)
 
     print(f"Step 2: HMC sampling (init k={K_INIT}, true k={TRUE_K})...")
-
-    M       = 2000   # Increased from 500
-    N       = 15000   # Increased from 2000 (Burn-in)
-    L       = 50     # More leapfrog steps can help explore further per iteration
-    delta_t = 0.1 # Smaller step size to avoid immediate divergence
 
     samples = HMC_sampler(
         model   = model,
@@ -264,6 +257,7 @@ def plot_figure7(results, save_path):
     plt.savefig(save_path, dpi=150)
     print(f"Figure saved to {save_path}")
     plt.show()
+    
 
 
 # =========================================================================
@@ -289,14 +283,23 @@ def print_table1(results, case_labels):
 # Main
 # =========================================================================
 def run():
+    N_u = 6
+    N_f = 32
+    M = 2000
+    N = 8000
+    L = 20
+    delta_t = 0.1
+
     # Case 1: all sigma = 0.01  (Figure 7a / Table 1 row 1)
     results_case1 = run_one_case(
-        sigma_f=0.01, sigma_u=0.01, sigma_b=0.01, case_label=1
+        sigma_f=0.01, sigma_u=0.01, sigma_b=0.01, case_label=1,
+        N_u=N_u, N_f=N_f, M=M, N=N, L=L, delta_t=delta_t
     )
 
     # Case 2: sigma_f=0.1, sigma_u=0.1, sigma_b=0.01  (Figure 7b / Table 1 row 2)
     results_case2 = run_one_case(
-        sigma_f=0.1, sigma_u=0.1, sigma_b=0.01, case_label=2
+        sigma_f=0.1, sigma_u=0.1, sigma_b=0.01, case_label=2,
+        N_u=N_u, N_f=N_f, M=M, N=N, L=L, delta_t=delta_t
     )
 
     results      = [results_case1, results_case2]
@@ -306,7 +309,7 @@ def run():
 
     plot_figure7(
         results,
-        save_path="experiments/results/figure7_bpinn_hmc_inverse.png"
+        save_path=f"experiments/results/figure7_bpinn_hmc_inverse_{M}_{N}_{L}_{delta_t}_{N_u}_{N_f}.png"
     )
 
 

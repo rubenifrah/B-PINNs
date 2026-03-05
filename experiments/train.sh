@@ -21,4 +21,4 @@ mkdir -p $outdir
 echo "Launching test for $name"
 
 # Run your training script
-python /home/peforcioli/B-PINNs/experiments/run_poisson_unknown_noise.py
+python /home/peforcioli/B-PINNs/experiments/run_bpinn_inverse.py

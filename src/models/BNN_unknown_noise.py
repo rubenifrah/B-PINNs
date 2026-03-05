@@ -19,12 +19,13 @@ class BNN_UnknownNoise(nn.Module):
     Only potential_energy() and gradient() need to be aware of the new structure.
     """
 
-    def __init__(self, input_dim, output_dim, hidden_dims, activation=nn.Tanh()):
+    def __init__(self, input_dim, output_dim, hidden_dims, activation=nn.Tanh(), mu_log_sigma=-2):
         super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hidden_dims = hidden_dims
         self.activation = activation
+        self.mu_log_sigma = mu_log_sigma
 
         # Track shapes for slicing the 1D theta vector during functional forward
         # (identical to original BNN)
@@ -109,42 +110,12 @@ class BNN_UnknownNoise(nn.Module):
         """Standard Gaussian prior on network weights."""
         return -0.5 * torch.sum(theta_net ** 2) / (sigma_theta ** 2)
 
-    # def log_prior_sigma(self, log_sigma):
-    #     """
-    #     Half-Normal prior on sigma, expressed in log-space.
 
-    #     If sigma ~ HalfNormal(scale=1), then:
-    #         log p(sigma) = log(2) - 0.5 * sigma^2 - log(scale) - 0.5*log(2*pi)
-        
-    #     With the change of variables sigma = exp(log_sigma), the Jacobian adds log_sigma:
-    #         log p(log_sigma) = log p(sigma) + log_sigma
-        
-    #     We drop constants since HMC only needs the gradient:
-    #         log p(log_sigma) ∝ -0.5 * exp(2 * log_sigma) + log_sigma
-    #     """
-    #     sigma = torch.exp(log_sigma)
-    #     return -0.5 * sigma ** 2 + log_sigma
-
-    # better prior
     def log_prior_sigma(self, log_sigma):
-        mu_log_sigma = 0  # log(0.1)
+        mu_log_sigma = self.mu_log_sigma
         tau = 0.5            # flexibility 
         return -0.5 * ((log_sigma - mu_log_sigma) / tau) ** 2
 
-    # def log_prior_sigma(self, log_sigma):
-    #     """
-    #     Gaussian prior on log_sigma to prevent noise inflation.
-        
-    #     We center the prior (mu) around our expected noise scale.
-    #     log(0.1) ≈ -2.3. 
-    #     The standard deviation (tau) controls how strictly we enforce this.
-    #     tau = 0.5 allows the sampler to explore roughly between 0.05 and 0.2,
-    #     but heavily penalizes it if it tries to inflate sigma to 0.9.
-    #     """
-    #     mu_log_sigma = -2.302  # Prior mean corresponding to sigma = 0.1
-    #     tau = 0.5              # Prior standard deviation (flexibility)
-        
-    #     return -0.5 * ((log_sigma - mu_log_sigma) ** 2) / (tau ** 2)
 
     # =========================================================================
     # Potential energy — the core of the extension

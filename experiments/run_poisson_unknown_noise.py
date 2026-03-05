@@ -56,16 +56,16 @@ def run_hmc_unknown_noise():
     # 2. Setup model
     # ------------------------------------------------------------------
     # Set the mean of the log-sigma prior
-    mu_log_sigma = -2
+    mu_log_sigma = -2.3
     model = BNN_UnknownNoise(input_dim=1, output_dim=1, hidden_dims=[50, 50], mu_log_sigma=mu_log_sigma)
 
     print(f"Network parameters:  {model.num_params}")
     print(f"Total HMC dimension: {model.total_params}  (+ log_sigma_u, log_sigma_f)")
 
-    # Pretrain first
+    
     
     # Then initialize theta_0 
-    theta_0 = model.get_initial_theta(log_sigma_f_init=-2)
+    theta_0 = model.get_initial_theta(log_sigma_f_init=mu_log_sigma)
   
     print(f"\nInitial log_sigma_f: {theta_0[model.num_params].item():.3f}  "
           f"=> sigma_f = {torch.exp(theta_0[model.num_params]).item():.3f}")
@@ -76,10 +76,11 @@ def run_hmc_unknown_noise():
     # NOTE: sigma_u and sigma_f are NO LONGER passed as kwargs —
     # they are inferred from theta_full inside potential_energy().
     # ------------------------------------------------------------------
-    N = 7000   
-    M = 1000   
-    delta_t = 0.01  
-    L = 10   
+    N = 10000   
+    M = 2000   
+    delta_t = 0.0005  
+    L = 50   
+    
     
     print(f"Starting HMC with {N} iterations, keeping last {M} samples...")
 
@@ -99,20 +100,6 @@ def run_hmc_unknown_noise():
         sigma_u = TRUE_SIGMA_U
     )
 
-    # Check acceptance rate proxy — if std is near zero, chain is stuck
-    theta_net_samples = samples[:model.num_params, :]
-    print(f"Chain mixing check - mean std across weights: "
-        f"{theta_net_samples.std(dim=1).mean().item():.5f}")
-
-    # Also plot the sigma trace to see if it moved
-    plt.figure()
-    # log_sigma_f is now at index model.num_params
-    plt.plot(samples[model.num_params, :].numpy(), label='log_sigma_f trace', color='orange')
-    plt.legend()
-    plt.title("Sigma_f trace — should look like noise, not a flat line")
-    plt.savefig("experiments/results/sigma_trace.png")
-
-    print(f"Sampling complete. Samples shape: {samples.shape}")
 
     # ------------------------------------------------------------------
     # 5. Extract and report inferred noise levels
@@ -142,14 +129,13 @@ def run_hmc_unknown_noise():
     print(f"Mean NLL: {nll:.4f} (Lower is better)")
     print(f"L2 relative error: {l2:.4f}")
     
-    # Passing model (not bnn_model) and theta_net_samples
     ece = compute_ece_and_plot(
         model=model, 
         samples=theta_net_samples, 
         x_test=x_test, 
         y_true=y_true_test, 
         num_bins=15, 
-        save_path="experiments/results/poisson_1d_reliability.png"
+        save_path=f"experiments/results/bpinn_unknown_noise_{N}_{M}_{delta_t}_{L}_{mu_log_sigma}_reliability.png"
     )
     print(f"Expected Calibration Error (ECE): {ece:.4f}")
 
@@ -203,7 +189,7 @@ def run_hmc_unknown_noise():
 
     plt.tight_layout()
     os.makedirs("experiments/results", exist_ok=True)
-    save_path = "experiments/results/bpinn_unknown_noise.png"
+    save_path = f"experiments/results/bpinn_unknown_noise_{N}_{M}_{delta_t}_{L}_{mu_log_sigma}_{Nbr_colloc}.png"
     plt.savefig(save_path, dpi=150)
     print(f"\nPlot saved to {save_path}")
     plt.show()

@@ -1,2 +1,0 @@
-/home/peforcioli/B-PINNs/experiments/run_poisson_unknown_noise.py:53: DeprecationWarning: __array_wrap__ must accept context and return_scalar arguments (positionally) in the future. (Deprecated NumPy 2.0)
-  return np.sin(6 * x)**3

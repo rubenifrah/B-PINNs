@@ -113,7 +113,7 @@ class BNN(nn.Module):
         # 1. Data Likelihood (MSE on measurements) MUST use functional_forward
         log_lik_data = 0.0
         
-        # Boundary constraints likelihood
+        # Boundary constraints likelihood (Position: u(0) = 1)
         if x_b is not None and len(x_b) > 0:
             b_pred = self.functional_forward(theta, x_b)
             log_lik_data += -0.5 * torch.sum((b_pred - y_b)**2) / (sigma_u**2)
@@ -125,9 +125,7 @@ class BNN(nn.Module):
         
         # 2. Physics Likelihood (The PDE residual)
         x_f.requires_grad_(True)
-        # Create a proxy function for the PDE module to compute spatial derivatives
-        # This function wraps the functional forward so the PDE evaluator doesn't
-        # need to know about theta handling.
+
         def u_func_for_pde(x):
             return self.functional_forward(theta, x)
         
@@ -135,11 +133,21 @@ class BNN(nn.Module):
         res_f = pde_problem.compute_residual(u_func_for_pde, x_f)
         log_lik_f = -0.5 * torch.sum(res_f**2) / (sigma_f**2)
 
-        # 3. Parameter Prior
+        # =========================================================
+        # 3. NEW: Initial Velocity Likelihood (Derivative Constraint)
+        # =========================================================
+        log_lik_v0 = 0.0
+        if hasattr(pde_problem, 'compute_initial_velocity_residual'):
+            res_v0 = pde_problem.compute_initial_velocity_residual(u_func_for_pde)
+            # We use sigma_u here to enforce the velocity constraint as strictly as the position
+            log_lik_v0 = -0.5 * torch.sum(res_v0**2) / (sigma_u**2)
+
+        # 4. Parameter Prior
         log_p = self.log_prior(theta)
         
         # Total U(theta) is the negative log posterior
-        return -(log_lik_data + log_lik_f + log_p)
+        # We now include the velocity likelihood in the sum
+        return -(log_lik_data + log_lik_f + log_lik_v0 + log_p)
     
     def hamiltonian(self, theta, r, **kwargs):
         """

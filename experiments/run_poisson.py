@@ -12,6 +12,7 @@ from src.models.BNN import BNN
 from src.physics.PDEs import Poisson1D
 from src.utils.plotting import plot_1d_pinn, plot_1d_bpinn, plot_loss_curves
 from src.utils.training import train_pinn, train_bpinn
+from src.utils.metrics import evaluate_uncertainty, compute_ece_and_plot, compute_relative_l2
 
 # =========================================================================
 # This script provides a runnable comparison between PINN and B-PINN for 
@@ -19,30 +20,37 @@ from src.utils.training import train_pinn, train_bpinn
 # =========================================================================
 
 def run_poisson_experiment():
-    # 1. Setup Data and Physics
+    # Setup Data and Physics
+    lambd = 0.01  # Diffusion coefficient from paper
+    
     # Boundary data (x_b, y_b)
-    x_b = torch.tensor([[-1.0], [1.0]], dtype=torch.float32)
-    y_b = torch.tensor([[0.0], [0.0]], dtype=torch.float32)
+    x_b = torch.tensor([[-0.7], [0.7]], dtype=torch.float32)
+    y_b = torch.sin(6 * x_b)**3
     
     # Collocation points (x_f), forcing term measurements (y_f)
-    x_f = torch.linspace(-1, 1, 20).view(-1, 1).requires_grad_(True)
-    y_f = - (torch.pi ** 2) * torch.sin(torch.pi * x_f).detach()
+    Nbr_colloc = 80
+    x_f = torch.linspace(-0.7, 0.7, Nbr_colloc).view(-1, 1).requires_grad_(True)
+    y_f = lambd * (216 * torch.sin(6 * x_f) * torch.cos(6 * x_f)**2 - 108 * torch.sin(6 * x_f)**3).detach()
     
     # Add noisy data mirroring the standard testing setup
-    y_b = y_b + torch.randn_like(y_b) * 0.1
-    y_f = y_f + torch.randn_like(y_f) * 0.1
-    
-    sigma_u = 0.1
-    sigma_f = 0.1
-    
-    pde_problem = Poisson1D(x_f, y_f, sigma_f)
-    
+    sigma_u = 0.01
+    sigma_f = 0.01
+    y_b = y_b + torch.randn_like(y_b) * sigma_u
+    y_f = y_f + torch.randn_like(y_f) * sigma_f
+
+    # Define the parameters of the problem
+    pde_problem = Poisson1D(x_f, y_f, sigma_f, lambd=lambd)    
+        
+    # Define the true solution for evaluation
+    def true_u(x):
+        return np.sin(6 * x)**3
+
     # =========================================================================
     # Standard PINN Baseline
     # =========================================================================
     print("========================================")
     print("Training Standard PINN baseline...")
-    pinn_model = PINN(input_dim=1, output_dim=1, hidden_dims=[20, 20])
+    pinn_model = PINN(input_dim=1, output_dim=1, hidden_dims=[50, 50])
     
     pinn_model, history = train_pinn(
         model=pinn_model,
@@ -51,17 +59,27 @@ def run_poisson_experiment():
         y_b=y_b,
         x_f=x_f,
         y_f=y_f,
-        epochs=1000,
-        lr=1e-3
+        epochs=5000,
+        lr=1e-2
     )
+
+    pinn_model.eval()
+    with torch.no_grad():
+        # Predict on the same x_test used for BNN
+        x_test = torch.linspace(-0.7, 0.7, 500).view(-1, 1)
+        y_pred_pinn = pinn_model(x_test)
+        y_true_test = torch.tensor(true_u(x_test.numpy()), dtype=torch.float32)
+        
+        l2_pinn = compute_relative_l2(y_pred_pinn, y_true_test)
+    
+    print(f"Standard PINN Relative L2 Error: {l2_pinn:.4f}")
 
     # =========================================================================
     # Bayesian PINN (HMC)
     # =========================================================================
     print("\n========================================")
     print("Training B-PINN (HMC)...")
-    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[20, 20])
-    
+    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[50, 50])
     samples = train_bpinn(
         model=bnn_model,
         pde_problem=pde_problem,
@@ -71,21 +89,58 @@ def run_poisson_experiment():
         y_f=y_f,
         sigma_u=sigma_u,
         sigma_f=sigma_f,
-        M=100,
-        N=200,
-        L=20,
+        M=2000,       
+        N=1000,      
+        L=10,       
         delta_t=0.01
     )
+
+    # =========================================================================
+    # Evaluate Uncertainty Metrics (PICP & MPIW & NLL)
+    # =========================================================================
+    print("\n========================================")
+    print("Evaluating B-PINN Uncertainty Metrics...")
+    
+    # Calculate using 2 standard deviations 
+    picp, mpiw, nll, l2 = evaluate_uncertainty(bnn_model, samples, x_test, y_true_test, n_std=2.0)
+    
+    print(f"Target Coverage: ~95.4% (using 2-sigma bounds)")
+    print(f"PICP: {picp * 100:.2f}% of the true solution is captured within bounds.")
+    print(f"MPIW: {mpiw:.4f} average width of the uncertainty interval.")
+    print(f"Mean NLL: {nll:.4f} (Lower is better)")
+    print(f"L2 relative error: {l2:.4f}")
+
+    ece = compute_ece_and_plot(
+        model=bnn_model, 
+        samples=samples, 
+        x_test=x_test, 
+        y_true=y_true_test, 
+        num_bins=15, 
+        save_path="experiments/results/poisson_1d_reliability.png"
+    )
+    print(f"Expected Calibration Error (ECE): {ece:.4f}")
+
+    with torch.no_grad():
+        # Get predictions for all samples: shape (M, N_test)
+        all_preds = []
+        for i in range(samples.shape[1]):
+            theta = samples[:, i]
+            all_preds.append(bnn_model.functional_forward(theta, x_test))
+        
+        # Stack and compute the mean across the M samples
+        y_pred_bpinn_mean = torch.stack(all_preds).mean(dim=0)
+        
+        # Compute Relative L2
+        l2_bpinn = compute_relative_l2(y_pred_bpinn_mean, y_true_test)
+
+    print(f"B-PINN (Mean Prediction) Relative L2 Error: {l2_bpinn:.4f}")
     
     # =========================================================================
     # Generate Plots
     # =========================================================================
     print("\n========================================")
     print("Generating plots...")
-    
-    def true_u(x):
-        return np.sin(np.pi * x)
-        
+
     plot_loss_curves(
         history=history,
         save_path="experiments/results/poisson_1d_loss.png"

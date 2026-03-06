@@ -12,3 +12,7 @@ __pycache__/
 
 # markdown files (except README.md)
 workplan.md
+
+# SLURM output files
+*.err
+*.out

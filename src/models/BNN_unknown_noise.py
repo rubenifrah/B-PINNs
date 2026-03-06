@@ -19,12 +19,13 @@ class BNN_UnknownNoise(nn.Module):
     Only potential_energy() and gradient() need to be aware of the new structure.
     """
 
-    def __init__(self, input_dim, output_dim, hidden_dims, activation=nn.Tanh()):
+    def __init__(self, input_dim, output_dim, hidden_dims, activation=nn.Tanh(), mu_log_sigma=-2):
         super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hidden_dims = hidden_dims
         self.activation = activation
+        self.mu_log_sigma = mu_log_sigma
 
         # Track shapes for slicing the 1D theta vector during functional forward
         # (identical to original BNN)
@@ -46,42 +47,22 @@ class BNN_UnknownNoise(nn.Module):
         self.num_params = sum(torch.prod(torch.tensor(s)) for s in self.param_shapes)
 
         # Total dimension of the HMC vector = network params + log_sigma_u + log_sigma_f
-        self.total_params = self.num_params + 2
+        self.total_params = self.num_params + 1
 
     # =========================================================================
     # Helper: split the full HMC vector into network weights and log-sigmas
     # =========================================================================
     def split_theta(self, theta_full):
-        """
-        Splits the augmented HMC vector into:
-            - theta_net: network weights (num_params,)
-            - log_sigma_u: scalar (1,)
-            - log_sigma_f: scalar (1,)
-        """
-        if theta_full.numel() != self.total_params:
-            raise ValueError(
-                f"Expected theta_full size {self.total_params}, got {theta_full.numel()}. "
-                f"Remember: theta_full = [network weights ({self.num_params}), "
-                f"log_sigma_u (1), log_sigma_f (1)]"
-            )
+        """Splits the vector into network weights and just log_sigma_f"""
         theta_net = theta_full[:self.num_params]
-        log_sigma_u = theta_full[self.num_params]
-        log_sigma_f = theta_full[self.num_params + 1]
-        return theta_net, log_sigma_u, log_sigma_f
+        log_sigma_f = theta_full[self.num_params] # Just one extra param
+        return theta_net, log_sigma_f
 
-    def get_initial_theta(self, log_sigma_u_init=0.0, log_sigma_f_init=0.0):
-        """
-        Returns an initial full HMC vector, combining current network weights
-        with initial guesses for log_sigma_u and log_sigma_f.
-
-        Args:
-            log_sigma_u_init: initial log(sigma_u). Default 0.0 => sigma_u = 1.0
-            log_sigma_f_init: initial log(sigma_f). Default 0.0 => sigma_f = 1.0
-                              Set to log(true_sigma) if you want to start near the truth.
-        """
+    def get_initial_theta(self, log_sigma_f_init=-2.3):
+        """Only initialize log_sigma_f"""
         theta_net = parameters_to_vector(self.parameters()).detach()
-        log_sigmas = torch.tensor([log_sigma_u_init, log_sigma_f_init], dtype=torch.float32)
-        return torch.cat([theta_net, log_sigmas])
+        log_sigma_f = torch.tensor([log_sigma_f_init], dtype=torch.float32)
+        return torch.cat([theta_net, log_sigma_f])
 
     # =========================================================================
     # Functional forward pass — identical to original BNN, operates on theta_net only
@@ -130,82 +111,42 @@ class BNN_UnknownNoise(nn.Module):
         return -0.5 * torch.sum(theta_net ** 2) / (sigma_theta ** 2)
 
     def log_prior_sigma(self, log_sigma):
-        """
-        Half-Normal prior on sigma, expressed in log-space.
-
-        If sigma ~ HalfNormal(scale=1), then:
-            log p(sigma) = log(2) - 0.5 * sigma^2 - log(scale) - 0.5*log(2*pi)
-        
-        With the change of variables sigma = exp(log_sigma), the Jacobian adds log_sigma:
-            log p(log_sigma) = log p(sigma) + log_sigma
-        
-        We drop constants since HMC only needs the gradient:
-            log p(log_sigma) ∝ -0.5 * exp(2 * log_sigma) + log_sigma
-        """
-        sigma = torch.exp(log_sigma)
-        return -0.5 * sigma ** 2 + log_sigma
+        mu_log_sigma = self.mu_log_sigma
+        tau = 0.5            # flexibility 
+        return -0.5 * ((log_sigma - mu_log_sigma) / tau) ** 2
 
     # =========================================================================
     # Potential energy — the core of the extension
     # =========================================================================
-    def potential_energy(self, theta_full, x_u, y_u, x_f, y_f, pde_problem):
-        """
-        Extended potential energy U(theta_full) where theta_full includes
-        network weights AND log_sigma_u, log_sigma_f.
+    def potential_energy(self, theta_full, x_u, y_u, x_f, y_f, pde_problem, sigma_u):
+        
+        # 1. Split the augmented vector (only extracting log_sigma_f)
+        theta_net, log_sigma_f = self.split_theta(theta_full)
 
-        U = - [log p(D_u | theta, sigma_u)
-              + log p(D_f | theta, sigma_f)
-              + log p(theta)
-              + log p(sigma_u)
-              + log p(sigma_f)]
-
-        Note: compared to the original BNN, sigma_u and sigma_f are NO LONGER
-        passed as fixed arguments — they are inferred from theta_full.
-        """
-        # 1. Split the augmented vector
-        theta_net, log_sigma_u, log_sigma_f = self.split_theta(theta_full)
-
-        # 2. Recover sigma values (always positive via exp)
-        sigma_u = torch.exp(log_sigma_u)
+        # 2. Recover sigma_f
         sigma_f = torch.exp(log_sigma_f)
 
-        # 3. Data likelihood: p(D_u | theta, sigma_u)
+        # 3. Data likelihood (Uses the FIXED sigma_u passed as an argument)
         u_pred = self.functional_forward(theta_net, x_u)
-        # Gaussian log-likelihood includes the log(sigma) normalization term
-        # -0.5 * N * log(2*pi*sigma^2) - 0.5 * sum((pred - obs)^2 / sigma^2)
-        # The constant -0.5*N*log(2*pi) is dropped (doesn't affect HMC gradients)
         N_u = y_u.shape[0]
-        log_lik_u = (
-            -N_u * log_sigma_u
-            - 0.5 * torch.sum((u_pred - y_u) ** 2) / (sigma_u ** 2)
-        )
+        # Notice we don't have -N_u * log_sigma_u here because it's a constant
+        log_lik_u = -0.5 * torch.sum((u_pred - y_u) ** 2) / (sigma_u ** 2)
 
-        # 4. Physics likelihood: p(D_f | theta, sigma_f)
+        # 4. Physics likelihood (Uses the INFERRED sigma_f)
         x_f.requires_grad_(True)
-
         def u_func_for_pde(x):
             return self.functional_forward(theta_net, x)
 
         res_f = pde_problem.compute_residual(u_func_for_pde, x_f)
         N_f = res_f.shape[0]
-        log_lik_f = (
-            -N_f * log_sigma_f
-            - 0.5 * torch.sum(res_f ** 2) / (sigma_f ** 2)
-        )
+        log_lik_f = -N_f * log_sigma_f - 0.5 * torch.sum(res_f ** 2) / (sigma_f ** 2)
 
-        # 5. Prior on network weights
+        # 5. Priors
         log_p_theta = self.log_prior_theta(theta_net)
+        log_p_sigma_f = self.log_prior_sigma(log_sigma_f) # Prior only on sigma_f
 
-        # 6. Prior on noise levels (Half-Normal in log-space)
-        log_p_sigma_u = self.log_prior_sigma(log_sigma_u)
-        log_p_sigma_f = self.log_prior_sigma(log_sigma_f)
-
-        # 7. Total potential energy (negative log posterior)
-        log_posterior = (
-            log_lik_u + log_lik_f
-            + log_p_theta
-            + log_p_sigma_u + log_p_sigma_f
-        )
+        # 6. Total potential energy
+        log_posterior = log_lik_u + log_lik_f + log_p_theta + log_p_sigma_f
         return -log_posterior
 
     def hamiltonian(self, theta_full, r, **kwargs):
@@ -231,16 +172,6 @@ class BNN_UnknownNoise(nn.Module):
     # Utility: extract inferred sigma statistics from posterior samples
     # =========================================================================
     def extract_sigma_samples(self, samples):
-        """
-        Given posterior samples of shape (total_params, M),
-        returns sigma_u and sigma_f samples.
-
-        Args:
-            samples: tensor of shape (total_params, M)
-        Returns:
-            sigma_u_samples: (M,)
-            sigma_f_samples: (M,)
-        """
-        log_sigma_u_samples = samples[self.num_params, :]
-        log_sigma_f_samples = samples[self.num_params + 1, :]
-        return torch.exp(log_sigma_u_samples), torch.exp(log_sigma_f_samples)
+        """Extract only sigma_f"""
+        log_sigma_f_samples = samples[self.num_params, :]
+        return torch.exp(log_sigma_f_samples)

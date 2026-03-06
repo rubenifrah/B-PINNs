@@ -14,12 +14,17 @@ class PDEProblem:
         """This must be overridden by specific PDEs"""
         raise NotImplementedError
 
+    def compute_boundary_derivatives(self, u_func):
+        return None
+
 class Poisson1D(PDEProblem):
     """
-    1D Poisson equation: u_xx = f(x)
+    1D Poisson equation: lambda * u_xx = f(x)
     """
-    def __init__(self, x_f, y_f, sigma_f):
+    # Added lambd parameter with a default of 1.0 so it doesn't break your old tests
+    def __init__(self, x_f, y_f, sigma_f, lambd=1.0):
         super().__init__(x_f, y_f, sigma_f)
+        self.lambd = lambd
 
     def compute_residual(self, u_func, x, params=None):
         u = u_func(x)
@@ -27,8 +32,11 @@ class Poisson1D(PDEProblem):
         u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
         # Second derivative
         u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
-        return u_xx - self.y_f # residual: u_xx - f = 0
+        
+        # Apply the diffusion coefficient to the residual
+        return (self.lambd * u_xx) - self.y_f
 
+        
 class Burgers1D(PDEProblem):
     """
     1D Burgers equation: u_t + u * u_x = nu * u_xx
@@ -98,4 +106,11 @@ class DampedHarmonicOscillator1D(PDEProblem):
         # Residual: m * u_tt + c * u_t + k * u - f(t) = 0
         forcing = self.f(t) if self.f is not None else 0.0
         return self.m * u_tt + self.c * u_t + self.k * u - forcing - self.y_f
+
+    def compute_initial_velocity_residual(self, u_func):
+        t0 = torch.tensor([[0.0]], dtype=torch.float32, requires_grad=True)
+        u0 = u_func(t0)
+        # Calculate u_t at t=0
+        u_t0 = torch.autograd.grad(u0, t0, grad_outputs=torch.ones_like(u0), create_graph=True)[0]
+        return u_t0 # Residual is (u'(0) - 0)
     

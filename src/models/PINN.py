@@ -43,11 +43,12 @@ class PINN(nn.Module):
         """Standard forward pass proxying the internal MLP."""
         return self.net(x)
 
+   
     def compute_loss(self, x_b, y_b, x_f, pde_problem, x_u=None, y_u=None, boundary_weight=1.0):
         """
-        Computes the total loss for standard PINN training: Loss_boundary + Loss_physics + [Loss_data]
+        Computes the total loss for standard PINN training: Loss_boundary + Loss_physics + Loss_velocity + [Loss_data]
         """
-        # 1. Boundary Loss
+        # 1. Boundary Loss (Position: u(0) = 1)
         if x_b is not None and len(x_b) > 0:
             b_pred = self.forward(x_b)
             mse_b = torch.mean((b_pred - y_b)**2)
@@ -61,13 +62,22 @@ class PINN(nn.Module):
         else:
             mse_u = torch.tensor(0.0, device=x_f.device)
 
-        # 3. Physics Loss
+        # 3. Physics Loss (PDE Residual)
         x_f.requires_grad_(True)
-        # We pass self.forward to the PDE problem to compute derivatives w.r.t x_f
         res_f = pde_problem.compute_residual(self.forward, x_f)
         mse_f = torch.mean(res_f**2)
         
+        # =========================================================
+        # 4. NEW: Initial Velocity Loss (Derivative Boundary Condition)
+        # =========================================================
+        if hasattr(pde_problem, 'compute_initial_velocity_residual'):
+            res_v0 = pde_problem.compute_initial_velocity_residual(self.forward)
+            mse_v0 = torch.mean(res_v0**2)
+        else:
+            mse_v0 = torch.tensor(0.0, device=x_f.device)
+            
         # Total Loss is the sum of component MSEs
-        total_loss = (mse_b * boundary_weight) + mse_u + mse_f
+        # We multiply mse_v0 by boundary_weight to enforce it strongly
+        total_loss = (mse_b * boundary_weight) + mse_u + mse_f + (mse_v0 * boundary_weight)
         
         return total_loss, mse_b, mse_u, mse_f

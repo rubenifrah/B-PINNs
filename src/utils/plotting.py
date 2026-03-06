@@ -22,8 +22,9 @@ def plot_1d_pinn(model, x_u, y_u, x_f, y_f=None, true_solution_func=None, title=
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
     # Generate continuous test points over the domain
-    x_min = float(torch.min(x_f))
-    x_max = float(torch.max(x_f))
+    x_min = float(x_f.detach().cpu().min()) 
+    x_max = float(x_f.detach().cpu().max()) 
+    
     margin = (x_max - x_min) * 0.05
     x_test = torch.linspace(x_min - margin, x_max + margin, 200).view(-1, 1)
     
@@ -43,45 +44,27 @@ def plot_1d_pinn(model, x_u, y_u, x_f, y_f=None, true_solution_func=None, title=
     # Plot true solution on primary axis if provided
     if true_solution_func is not None:
         u_true = true_solution_func(x_test_np)
-        ax1.plot(x_test_np, u_true, 'k--', label='True Solution $u(x)$', linewidth=2)
+        ax1.plot(x_test_np, u_true, 'k-', label='True Solution $u(x)$', linewidth=2)
     
     # Plot PINN prediction on primary axis
-    ax1.plot(x_test_np, u_pred, 'b-', label='PINN Prediction $\hat{u}(x)$', linewidth=2)
+    ax1.plot(x_test_np, u_pred, 'r--', label='Predictive mean $\hat{u}(x)$', linewidth=2)
     
     # Plot boundary/observation data on primary axis
-    ax1.scatter(x_u_np, y_u_np, color='red', s=100, label='Observation Data $y_u$', zorder=5)
+    ax1.scatter(x_u_np, y_u_np, color='blue', s=100, label='Noisy observations', zorder=5)
     
-    # If no y_f provided, just plot collocation point locations on bottom
-    if y_f is None:
-        min_y = min(np.min(u_pred), np.min(y_u_np))
-        if true_solution_func is not None:
-            min_y = min(min_y, np.min(u_true))
-        ax1.scatter(x_f_np, np.full_like(x_f_np, min_y - 0.5), color='green', marker='x', s=30, label='Collocation Locations', alpha=0.5)
+    # If no y_f provided, optional collocation points plotting
+    # if y_f is None: ...
     
     ax1.set_xlabel('x', fontsize=14)
-    ax1.set_ylabel('u(x) [Primary Axis]', fontsize=14, color='b')
-    ax1.tick_params(axis='y', labelcolor='b')
-    ax1.grid(True, linestyle=':', alpha=0.7)
+    ax1.set_ylabel('u(x)', fontsize=14)
+    # ax1.tick_params(axis='y', labelcolor='b')
+    ax1.grid(True, linestyle='-', alpha=0.3)
+    ax1.legend(loc='upper right', fontsize=12)
     
-    # Plot PDE Targets (noisy y_f) on secondary axis if provided
-    if y_f is not None:
-        ax2 = ax1.twinx()
-        y_f_np = y_f.detach().numpy()
-        ax2.scatter(x_f_np, y_f_np, color='green', marker='x', s=60, label='PDE Targets $y_f$', alpha=0.9)
-        ax2.set_ylabel('PDE Target $f(x)$ [Secondary Axis]', fontsize=14, color='g')
-        ax2.tick_params(axis='y', labelcolor='g')
-        
-        # Combine legends from both axes
-        lines_1, labels_1 = ax1.get_legend_handles_labels()
-        lines_2, labels_2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=2, fontsize=12)
-    else:
-        ax1.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=2, fontsize=12)
-        
     plt.title(title, fontsize=16)
     plt.tight_layout()
     
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"Plot saved successfully to: {save_path}")
     
     # Explicitly close to free memory
@@ -131,51 +114,36 @@ def plot_1d_bpinn(model, samples, x_u, y_u, x_f, y_f=None, true_solution_func=No
     
     fig, ax1 = plt.subplots(figsize=(10, 6))
     
-    # Plot uncertainty bounds
-    ax1.fill_between(x_test_np, u_mean - 2*u_std, u_mean + 2*u_std, color='blue', alpha=0.2, label='$\pm 2\sigma$ Uncertainty')
-    ax1.fill_between(x_test_np, u_mean - u_std, u_mean + u_std, color='blue', alpha=0.3, label='$\pm 1\sigma$ Uncertainty')
-    
     # Plot true solution
     if true_solution_func is not None:
         u_true = true_solution_func(x_test_np)
-        ax1.plot(x_test_np, u_true, 'k--', label='True Solution $u(x)$', linewidth=2)
+        ax1.plot(x_test_np, u_true, 'k-', label='True Solution $u(x)$', linewidth=2)
         
     # Plot predictive mean
-    ax1.plot(x_test_np, u_mean, 'b-', label='Predictive Mean $\mu(x)$', linewidth=2)
+    ax1.plot(x_test_np, u_mean, 'r--', label='Posterior mean', linewidth=2)
+    
+    # Plot uncertainty bounds
+    ax1.fill_between(x_test_np, u_mean - 2*u_std, u_mean + 2*u_std,
+                    alpha=0.3, color='cyan', label='±2 std')
     
     # Plot boundary/observation data
-    ax1.scatter(x_u_np, y_u_np, color='red', s=100, label='Observation Data $y_u$', zorder=5)
+    ax1.scatter(x_u_np, y_u_np, color='blue', s=100, label='Noisy observations', zorder=5)
     
-    if y_f is None:
-        min_y = min(np.min(u_mean - 2*u_std), np.min(y_u_np))
-        if true_solution_func is not None:
-            min_y = min(min_y, np.min(u_true))
-        ax1.scatter(x_f_np, np.full_like(x_f_np, min_y - 0.5), color='green', marker='x', s=30, label='Collocation Locations', alpha=0.5)
-        
+    # Optional PDE Targets (noisy y_f) - currently not standard for this style, but keeping if requested. 
+    # Usually we don't plot this for the simple B-PINN plot from train_bpinn_unknown_noise.py
+    # if y_f is not None:
+    #     ...
+
     ax1.set_xlabel('x', fontsize=14)
-    ax1.set_ylabel('u(x) [Primary Axis]', fontsize=14, color='b')
-    ax1.tick_params(axis='y', labelcolor='b')
-    ax1.grid(True, linestyle=':', alpha=0.7)
-    
-    # Plot PDE Targets (noisy y_f) on secondary axis if provided
-    if y_f is not None:
-        ax2 = ax1.twinx()
-        y_f_np = y_f.detach().numpy()
-        ax2.scatter(x_f_np, y_f_np, color='green', marker='x', s=60, label='PDE Targets $y_f$', alpha=0.9)
-        ax2.set_ylabel('PDE Target $f(x)$ [Secondary Axis]', fontsize=14, color='g')
-        ax2.tick_params(axis='y', labelcolor='g')
-        
-        # Combine legends
-        lines_1, labels_1 = ax1.get_legend_handles_labels()
-        lines_2, labels_2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=3, fontsize=12)
-    else:
-        ax1.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=3, fontsize=12)
+    ax1.set_ylabel('u(x)', fontsize=14)
+    # ax1.tick_params(axis='y', labelcolor='b')
+    ax1.grid(True, linestyle='-', alpha=0.3)
+    ax1.legend(loc='upper right', fontsize=12)
         
     plt.title(title, fontsize=16)
     plt.tight_layout()
     
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"Plot saved successfully to: {save_path}")
     plt.close()
 

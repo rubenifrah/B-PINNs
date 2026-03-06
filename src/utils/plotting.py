@@ -63,21 +63,15 @@ def plot_1d_pinn(model, x_u, y_u, x_f, y_f=None, true_solution_func=None, title=
     ax1.tick_params(axis='y', labelcolor='b')
     ax1.grid(True, linestyle=':', alpha=0.7)
     
-    # Plot PDE Targets (noisy y_f) on secondary axis if provided
-    if y_f is not None:
-        ax2 = ax1.twinx()
-        y_f_np = y_f.detach().numpy()
-        ax2.scatter(x_f_np, y_f_np, color='green', marker='x', s=60, label='PDE Targets $y_f$', alpha=0.9)
-        ax2.set_ylabel('PDE Target $f(x)$ [Secondary Axis]', fontsize=14, color='g')
-        ax2.tick_params(axis='y', labelcolor='g')
-        
-        # Combine legends from both axes
-        lines_1, labels_1 = ax1.get_legend_handles_labels()
-        lines_2, labels_2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=2, fontsize=12)
-    else:
-        ax1.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=2, fontsize=12)
-        
+    # only plot the colocation points, no need to plot y_f on a secondary axis
+    # the y_f is just the forcing term, which is not really needed to be plotted
+
+    # plot the collocation points on the bottom
+    min_y = min(np.min(u_pred), np.min(y_u_np))
+    if true_solution_func is not None:
+        min_y = min(min_y, np.min(u_true))
+    ax1.scatter(x_f_np, np.full_like(x_f_np, min_y - 0.5), color='green', marker='x', s=30, label='Collocation Locations', alpha=0.5)
+    
     plt.title(title, fontsize=16)
     plt.tight_layout()
     
@@ -157,21 +151,13 @@ def plot_1d_bpinn(model, samples, x_u, y_u, x_f, y_f=None, true_solution_func=No
     ax1.tick_params(axis='y', labelcolor='b')
     ax1.grid(True, linestyle=':', alpha=0.7)
     
-    # Plot PDE Targets (noisy y_f) on secondary axis if provided
-    if y_f is not None:
-        ax2 = ax1.twinx()
-        y_f_np = y_f.detach().numpy()
-        ax2.scatter(x_f_np, y_f_np, color='green', marker='x', s=60, label='PDE Targets $y_f$', alpha=0.9)
-        ax2.set_ylabel('PDE Target $f(x)$ [Secondary Axis]', fontsize=14, color='g')
-        ax2.tick_params(axis='y', labelcolor='g')
-        
-        # Combine legends
-        lines_1, labels_1 = ax1.get_legend_handles_labels()
-        lines_2, labels_2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=3, fontsize=12)
-    else:
-        ax1.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=3, fontsize=12)
-        
+    # plot the collocation points on the bottom
+    min_y = min(np.min(u_pred), np.min(y_u_np))
+    if true_solution_func is not None:
+        min_y = min(min_y, np.min(u_true))
+    ax1.scatter(x_f_np, np.full_like(x_f_np, min_y - 0.5), color='green', marker='x', s=30, label='Collocation Locations', alpha=0.5)
+    
+
     plt.title(title, fontsize=16)
     plt.tight_layout()
     

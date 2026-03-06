@@ -1,0 +1,1121 @@
+B-PINNs: Bayesian Physics-Informed Neural Networks for
+Forward and Inverse PDE Problems with Noisy Data
+Liu Yanga,1, Xuhui Menga,1, George Em Karniadakisa,b,2
+aDivision of Applied Mathematics, Brown University, Providence, RI 02906, USA
+bPaciﬁc Northwest National Laboratory, Richland, WA 99354, USA
+Abstract
+We propose a Bayesian physics-informed neural network (B-PINN) to solve both
+forward and inverse nonlinear problems described by partial diﬀerential equations
+(PDEs) and noisy data. In this Bayesian framework, the Bayesian neural network
+(BNN) combined with a PINN for PDEs serves as the prior while the Hamiltonian
+Monte Carlo (HMC) or the variational inference (VI) could serve as an estimator of
+the posterior. B-PINNs make use of both physical laws and scattered noisy mea-
+surements to provide predictions and quantify the aleatoric uncertainty arising from
+the noisy data in the Bayesian framework. Compared with PINNs, in addition to
+uncertainty quantiﬁcation, B-PINNs obtain more accurate predictions in scenarios
+with large noise due to their capability of avoiding overﬁtting. We conduct a sys-
+tematic comparison between the two diﬀerent approaches for the B-PINN posterior
+estimation (i.e., HMC or VI), along with dropout used for quantifying uncertainty
+in deep neural networks. Our experiments show that HMC is more suitable than VI
+for the B-PINNs posterior estimation, while dropout employed in PINNs can hardly
+provide accurate predictions with reasonable uncertainty. Finally, we replace the
+BNN in the prior with a truncated Karhunen-Lo`eve (KL) expansion combined with
+HMC or a deep normalizing ﬂow (DNF) model as posterior estimators. The KL is
+as accurate as BNN and much faster but this framework cannot be easily extended
+to high-dimensional problems unlike the BNN based framework.
+Keywords:
+nonlinear PDEs, noisy data, Bayesian physics-informed neural
+networks, Hamiltonian Monte Carlo, Variational inference
+1The ﬁrst two authors contributed equally to this work.
+2Corresponding author: george karniadakis@brown.edu (George Em Karniadakis).
+Preprint submitted to Journal Name
+March 16, 2020
+arXiv:2003.06097v1  [stat.ML]  13 Mar 2020
+Glossary
+B-PINNs Bayesian physics-informed neural networks.
+BNNs Bayesian neural networks.
+DNF deep normalizing ﬂow.
+GPR Gaussian process regression.
+HMC Hamiltonian Monte Carlo.
+KL KarhunenLo`eve expansion.
+PDEs partial diﬀerential equations.
+PINNs physics-informed neural networks.
+VI variational inference.
+1. Introduction
+The state-of-the-art in data-driven modeling has advanced signiﬁcantly recently
+in applications across diﬀerent ﬁelds [1, 2, 3, 4, 5], due to the rapid development
+of machine learning and explosive growth of available data collected from diﬀerent
+sensors (e.g., satellites, cameras, etc.). In general, purely data-driven methods require
+a large amount of data in order to get accurate results [6]. As a powerful alternative,
+recently the data-driven solvers for partial diﬀerential equations (PDEs) have drawn
+an increasing attention due to their capability to encode the underlying physical laws
+in the form of PDEs and give relatively accurate predictions for the unknown terms
+with limited data. In the ﬁrst case we need “big data” while in the second case we
+can learn from “small data” as we explicitly utilize the physical laws or more broadly
+a parametrization of the physics.
+Two typical approaches are the Gaussian processes regression (GPR) for PDEs
+[7], and the physics-informed neural networks (PINNs) [6, 8]. Built upon the Bayesian
+framework with built-in mechanism for uncertainty quantiﬁcation, GPR is one of the
+most popular data-driven methods. However, vanilla GPR has diﬃculties in handling
+the nonlinearities when applied to solve PDEs, leading to restricted applications. On
+the other hand, PINNs have shown eﬀectiveness in both forward and inverse problems
+2
+for a wide range of PDEs [9, 10, 11, 12, 13]. However, PINNs are not equipped with
+built-in uncertainty quantiﬁcation, which may restrict their applications, especially
+for scenarios where the data are noisy.
+In previous work, we use physics-informed generative adversarial networks to
+quantify parametric uncertainty [10] and also polynomial chaos expansions in con-
+junction with dropout to quantify total uncertainty [9]. In the present work, we
+propose a Bayesian physics-informed neural networks (B-PINN) to solve linear or
+nonlinear PDEs with noisy data, see Fig. 1. The uncertainties arising from the scat-
+tered noisy data could be naturally quantiﬁed due to the Bayesian framework [14].
+B-PINNs consist of two parts: a parameterized surrogate model, i.e., a Bayesian
+neural network (BNN) with prior for the unknown terms in a PDE, and an ap-
+proach for estimating the posterior distributions of the parameters in the surrogate
+model. In particular, we employ the Hamiltonian Monte Carlo (HMC) [15, 16] or
+the variational inference (VI) [17, 18] for estimation of the posterior distributions. In
+addition, we note that a non-Bayesian framework model, i.e., the dropout, has been
+used to quantify the uncertainty in deep neural networks, including the PINNs for
+solving PDEs [9, 19]. We will validate the proposed B-PINN method and conduct
+a systematic comparison with the dropout for both the forward and inverse PDE
+problems given noisy data.
+In addition to BNNs, the Karhunen-Lo`eve expansion is also a widely used repre-
+sentation of a stochastic process. As an illustration, we further test the case using the
+truncated Karhunen-Lo`eve as the surrogate model while we use HMC or the deep
+normalizing ﬂow (DNF) models [20] for estimating the posterior in the Bayesian
+framework.
+The rest of the paper is organized as follows: In Sec. 2, we present the B-PINN
+algorithm for solving forward/inverse PDE problems with noisy data, including the
+BNNs for PDEs and posterior estimation methods, i.e., the HMC and VI, used in
+this paper. In Sec. 3, we compare the performance of the B-PINNs and dropout
+on the tasks of function approximation, forward PDE problems, and inverse PDE
+problems. In addition, we present comparisons between B-PINNs and PINNs as well
+as the KL for nonlinear forward/inverse PDEs in Secs. 4-5. We make a summary in
+Sec. 6. Furthermore, in Appendix A we present a study on the priors of BNNs, and
+in Appendix B we give more details on the DNF models.
+3
+2. B-PINNs: Bayesian Physics-informed Neural Networks
+We consider a general partial diﬀerential equation (PDE) of the form
+Nx(u; λ) = f,
+x ∈D,
+Bx(u; λ) = b,
+x ∈Γ,
+(1)
+where Nx is a general diﬀerential operator, D is the d-dimensional physical domain,
+u = u(x) is the solution of the PDE, and λ is the vector of parameters in the PDE.
+Also, f = f(x) is the forcing term, and Bx is the boundary condition operator acting
+on the domain boundary Γ. In forward problems λ is prescribed, and hence our goal
+is to infer the distribution of u at any x. In inverse problems, λ is also to be inferred
+from the data.
+Figure 1:
+Schematic for the Bayesian physics-informed neural network (B-PINN). P(θ) is the prior
+for hyperparameters as well as the unknown terms in PDEs, P (D|θ) represents the likelihood of
+observations (e.g., u, b, f), and P(θ|D) is the posterior. The blue panel represents the Bayesian
+neural network while the green panel represents the physics-informed part.
+We consider the scenario where our available dataset D are scattered noisy mea-
+surements of u, f and b from sensors:
+D = Du ∪Df ∪Db,
+(2)
+4
+whereDu = {(x(i)
+u , ¯u(i))}Nu
+i=1, Df = {(x(i)
+f ,
+¯f (i))}
+Nf
+i=1, Db = {(x(i)
+b , ¯b(i))}Nb
+i=1. We
+assume that the measurements are independently Gaussian distributed centered at
+the hidden real value, i.e.,
+¯u(i) = u(x(i)
+u ) + ϵ(i)
+u ,
+i = 1, 2...Nu,
+¯f (i) = f(x(i)
+f ) + ϵ(i)
+f ,
+i = 1, 2...Nf,
+¯b(i) = b(x(i)
+b ) + ϵ(i)
+b ,
+i = 1, 2...Nb,
+(3)
+where ϵ(i)
+u , ϵ(i)
+f
+and ϵ(i)
+b
+are independent Gaussian noises with zero mean. We also
+assume that the ﬁdelity of each sensor is known, i.e., the standard deviations of ϵ(i)
+u ,
+ϵ(i)
+f
+and ϵ(i)
+b
+are known to be σ(i)
+u , σ(i)
+f
+and σ(i)
+b , respectively. Note that the size of the
+noise could be diﬀerent among measurements of diﬀerent terms, and even between
+measurements of the same terms in the PDE.
+We ﬁrstly consider the forward problem setup. The Bayesian framework starts
+from representing u with a surrogate model ˜u(x; θ), where θ is the vector of param-
+eters in the surrogate model with a prior distribution P(θ). Consequently, f and b
+are represented by:
+˜f(x; θ) = Nx(˜u(x; θ); λ), ˜b(x; θ) = Bx(˜u(x; θ); λ).
+(4)
+Then, the likelihood can be calculated as:
+P(D|θ) = P(Du|θ)P(Df|θ)P(Db|θ),
+P(Du|θ) =
+Nu
+Y
+i=1
+1
+q
+2πσ(i)
+u
+2 exp
+ 
+−(˜u(x(i)
+u ; θ) −¯u(i))2
+2σ(i)
+u
+2
+!
+,
+P(Df|θ) =
+Nf
+Y
+i=1
+1
+q
+2πσ(i)
+f
+2 exp
+
+−( ˜f(x(i)
+f ; θ) −¯f (i))2
+2σ(i)
+f
+2
+
+,
+P(Db|θ) =
+Nb
+Y
+i=1
+1
+q
+2πσ(i)
+b
+2 exp
+ 
+−(˜b(x(i)
+b ; θ) −¯b(i))2
+2σ(i)
+b
+2
+!
+.
+(5)
+Finally, the posterior is obtained from Bayes’ theorem:
+P(θ|D) = P(D|θ)P(θ)
+P(D)
+≃P(D|θ)P(θ),
+(6)
+where “≃” represents equality up to a constant. Usually the calculation of P(D) is
+analytically intractable, thus in practice we only have an unnormalized expression
+5
+of P(θ|D). To give a posterior u at any x, we can sample from P(θ|D), denoted as
+{θ(i)}M
+i=1, and then obtain statistics from samples {˜u(x; θ(i))}M
+i=1. We focus mostly
+on the mean and standard deviation of {˜u(x; θ(i))}M
+i=1, since the former represents
+the prediction of u(x) while the latter quantiﬁes the uncertainty.
+In the case of inverse problems, we can build the surrogate model for u in the
+same way as above. However, apart from θ, we also need to assign a prior distri-
+bution for λ, which could be independent of P(θ). The likelihood is the same as in
+Eq. 5, except that P(D|θ), P(Du|θ), P(Df|θ) and P(Db|θ) should be replaced by
+P(D|θ, λ), P(Du|θ, λ), P(Df|θ, λ) and P(Db|θ, λ), respectively. Consequently, we
+should calculate the joint posterior of [θ, λ] as
+P(θ, λ|D) = P(D|θ, λ)P(θ, λ)
+P(D)
+≃P(D|θ, λ)P(θ, λ) = P(D|θ, λ)P(θ)P(λ),
+(7)
+where the last equality comes from the fact that the priors for θ and λ are indepen-
+dent.
+The parameter λ in the PDE is a vector in the above problem setup, however, we
+remark that the same framework could be applied in the cases where the parameter
+is a ﬁeld or ﬁelds depending on x, by representing the parameter vector with another
+surrogate model.
+Since the forward problems and inverse problems are formulated in the same
+framework, in the following we will use θ to represent the vector of all the unknown
+parameters in the surrogate models for the solutions and parameters. We denote the
+dimension of θ, i.e., the number of unknown parameters, as dθ.
+2.1. Prior for Bayesian Physics-informed Neural Networks
+We consider a fully-connected neural network with L ≥1 hidden layers as the
+surrogate model, see Fig.
+1.
+Let us denote the input of the neural network as
+x ∈RNx, the output of the neural network as ˜u ∈R, and the l-th hidden layer as
+zl ∈RNl for l = 1, 2...N. Then
+zl = φ(wl−1zl−1 + bl−1),
+l = 1, 2...L,
+˜u = wLzL + bL,
+(8)
+where wl ∈RNl+1×Nl are the weight matrices, bl ∈RNl+1 are the bias vectors, φ is
+the nonlinear activation function, which is the hyperbolic tangent function in the
+present study, and z0 = x, N0 = Nx, and NL+1 = 1 for the convenience of notation.
+When using a neural network as a surrogate model, the unknown parameters θ are
+the concatenation of all the weight matrices and bias vectors.
+6
+(a)
+(b)
+(c)
+Figure 2: Comparison between the B-PINNs’ prior distributions and Gaussian distributions. The
+red lines and histograms represent the density of B-PINNs’ outputs (a) ˜u(x), (b) d˜u(x)/dx, and
+(c) d2˜u(x)/dx2 at x = 0, 0.5, and 1. The black lines are the density functions of the corresponding
+Gaussian distributions with zero mean and the same standard deviations as the B-PINNs’ outputs.
+In the application of Bayesian neural networks, a commonly used prior for θ is
+that each component of θ is an independent Gaussian distribution with zero mean,
+and the entries of wl and bl have the variances σw,l and σb,l, respectively, for l =
+0, 1...L [15, 16]. In this case, it can be shown that the prior of the function ˜u(x)
+is actually a Gaussian process as the width of hidden layers goes to inﬁnity with
+√Nlσw,l ﬁxed for l = 1, 2...L [16, 21, 22].
+However, we remark that due to the ﬁnite width of the neural networks, the
+derivatives of ˜u could be far from Gaussian processes, in contrast to the derivatives
+of a Gaussian process (under certain regularity constraints) which are also Gaussian
+processes. For example, in Fig. 2 we compare the prior of B-PINNs with Gaussian
+distributions, where Nx = 1, L = 2, N1 = N2 = 50, σb,l = σw,l = 1, for l = 0, 1, 2.
+We can see that although the priors of ˜u(x) at various x match the corresponding
+Gaussian distributions, the priors of d˜u(x)/dx and d2˜u(x)/dx2 are not close to the
+Gaussian distributions.
+2.2. Posterior sampling approaches for Bayesian Physics-informed Neural Networks
+In this subsection, we introduce two approaches to sample from the posterior
+distribution of the parameters in B-PINNs: the Hamiltonian Monte Carlo (HMC)
+method and the variational inference (VI) method.
+2.2.1. Hamiltonian Monte Carlo (HMC) method
+Hamiltonian Monte Carlo, which is known as a golden approach for sampling from
+posterior distributions, is an eﬃcient Markov Chain Monte Carlo (MCMC) method
+7
+based on the Hamiltonian dynamics [15, 16, 23]. In this approach, we ﬁrst simulate
+the Hamiltonian dynamics using numerical integration, which is then corrected by
+an Metropolis-Hastings acceptance step.
+Suppose the target posterior distribution for θ given a certain number of obser-
+vations D is deﬁned as
+P(θ|D) ≃exp(−U(θ)),
+(9)
+where
+U(θ) = −ln P(D|θ) −ln P(θ).
+(10)
+To sample from the posterior, HMC ﬁrst introduces an auxiliary momentum
+variable r to construct a Hamiltonian system
+H(θ, r) = U(θ) + 1
+2rTM −1r,
+(11)
+where M is a mass matrix, which is often set to be identity matrix, I. Then HMC
+generates samples from a joint distribution of (θ, r) as follows
+π(θ, r) ∼exp(−U(θ) −1
+2rTM −1r).
+(12)
+As we simply discard the r samples, the θ samples have marginal distribution
+P(θ|D).
+Speciﬁcally, the samples are generated from the following Hamiltonian dynamics
+dθ = M −1rdt,
+(13a)
+dr = −∇U(θ)dt.
+(13b)
+We use the leapfog method to discretize Eq.
+(13).
+Furthermore, to reduce the
+discretization error, we employ a Metropolis-Hastings step. The details for imple-
+menting the HMC method are displayed in Algorithm 1.
+8
+Algorithm 1 Hamiltonian Monte Carlo
+Require: initial states for θt0 and time step size δt.
+for k = 1, 2...N do
+Sample rtk−1 from N(0, M),
+(θ0, r0) ←(θtk−1, rtk−1).
+for i = 0, 1...(L −1) do
+ri ←ri −δt
+2 ∇U(θi),
+θi+1 ←θi + δtM −1ri,
+ri+1 ←ri −δt
+2 ∇U(θi+1),
+end for
+Metropolis-Hastings step:
+Sample p from Uniform[0, 1],
+α ←min{1, exp(H(θL, rL) −H(θtk−1, rtk−1))}.
+if p ≥α then
+θtk ←θL,
+else
+θtk ←θtk−1.
+end if
+end for
+Calculate {˜u(x, θtN+1−j)}M
+j=1 as samples of u(x), similarly for other terms.
+2.2.2. Variational Inference (VI) method
+In the variational learning, the posterior density of the unknown parameter vector
+θ = (θ1, θ2...θdθ), i.e., P(θ|D), is approximated by another density function Q(θ; ζ)
+parameterized by ζ, which is restricted to a smaller family of distributions [18, 24].
+A commonly used form of Q is a factorizable Gaussian distribution as follows:
+Q(θ; ζ) =
+dθ
+Y
+i=1
+q(θi; ζµ,i, ζρ,i),
+(14)
+where ζ = (ζµ, ζρ), ζµ = (ζµ,1, ζµ,2...ζµ,dθ), ζρ = (ζρ,1, ζρ,2...ζρ,dθ), and q(θi; ζµ,i, ζρ,i) is
+the density of the one-dimensional Gaussian distribution with mean ζµ,i and standard
+deviation ln(1 + exp(ζρ,i)).
+Diﬀerent versions of VI have been developed [17, 18], and here we employ the
+relatively popular one developed in [18], which is also easy to implement. In this
+approach, we can tune ζ to minimize
+DKL(Q(θ; ζ)||P(θ|D)) ≃Eθ∼Q[ln Q(θ; ζ) −ln P(θ) −ln P(D|θ)],
+(15)
+9
+where DKL denotes the Kullback-Leibler divergence.
+Here we employ the Adam optimizer [25] to train ζ. The detailed algorithm is
+given in Algorithm 2. We refer the readers to [18] for more details on the variational
+inference.
+Algorithm 2 Variational inference
+Require: an initial state for ζ.
+for k = 1, 2...N do
+Sample {z(j)}Nz
+j=1 independently from N(0, Idθ).
+θ(j) ←ζµ+ln(1+exp(ζρ))⊙z(j), j = 1, 2...Nz, ⊙denotes element-wise product.
+L(ζ) ←
+1
+Nz
+PNz
+j=1[ln Q(θ(j); ζ) −ln P(θ(j)) −ln P(D|θ(j))].
+Update ζ with gradient ∇ζL(ζ) using Adam optimizer.
+end for
+Sample {z(j)}M
+j=1 independently from N(0, Idθ).
+θ(j) ←ζµ + ln(1 + exp(ζρ)) ⊙z(j), j = 1, 2...M.
+Calculate {˜u(x, θ(j))}M
+j=1 as samples of u(x), similarly for other terms.
+3. Results and Discussion
+In this section we present a systematic comparison among the B-PINNs with
+diﬀerent posterior sampling methods, i.e., HMC (B-PINN-HMC) and VI (B-PINN-
+VI), as well as the dropout [9, 19] for 1D function approximation, and 1D/2D for-
+ward/inverse PDE problems.
+In all the cases, we employ a neural networks with 2 hidden layers, each with
+width of 50, for B-PINNs. The prior for θ is set as independent standard Gaussian
+distribution for each component.
+Such size of the neural network and the prior
+distribution are inherited from [24]. In the 1D case, the covariance function for ˜u
+is shown in Fig. A.12(b) (Appendix
+A). In HMC, the mass matrix is set to the
+identity matrix, i.e., M = I [24], the leapfrog step is set to L = 50δt, the initial
+time step is δt = 0.1, the burn-in steps are set to 2, 000, and the total number
+of samples is 15, 000.
+In VI, the Adam optimizer is employed for training, and
+the total number of training steps is N = 200, 000 with batch size Nz = 5. The
+hyperparameters for Adam optimizer are set as l = 10−3, β1 = 0.9, β2 = 0.999.
+In the dropout method, we randomly drop a certain number of neurons with a
+predeﬁned probability (i.e., dropout rate) at each training step [19]. The number
+of the training steps is 200, 000. The hyperparameters for the Adam optimizer are
+set as l = 10−3, β1 = 0.9, β2 = 0.999. To quantify the uncertainty, the strategy
+used in [9] is also employed here, i.e., after ﬁnishing the training we run the forward
+10
+propagation of DNNs M times with the same dropout rate as in training, and then
+compute the mean and standard deviation based on the samples. When estimating
+the means and standard deviations, we set the number of samples M = 10, 000 for
+all the methods in each test case.
+3.1. Function regression
+In this section, we test the posterior sampling methods introduced above on
+a function regression task.
+In this task, the B-PINN is reduced to a BNN. The
+framework is the same as that for solving PDEs, except that our data set only
+involves the unknown function u(x), thus the likelihood is P(D|θ) = P(Du|θ). The
+test function is expressed as
+u(x) = sin3(6x), x ∈[−1, 1],
+(16)
+and we use 32 training points placed in [−0.8, −0.2]∪[0.2, 0.8], with observation noise
+ϵu ∼N(0, 0.12).
+We note that the prior for BNNs is a Gaussian process with zero mean as the
+width of each hidden layer goes to inﬁnity [16, 21, 22]. In our case where the width is
+50, we could see from Fig. 2(a) that the prior at several single points matches well the
+Gaussian distribution. We thus view the prior as a Gaussian process approximately.
+Although the analytical expression for the kernel cannot be calculated, it could be
+estimated from independent samples of neural network functions (100, 000 samples),
+as is illustrated in Fig.
+A.12(b).
+Therefore, GPR could be applied and provide
+reference solutions for the posterior estimations, denoted as BNN-GPR. Note that
+such reference solution is not analytical and the errors could come from the Gaussian
+process assumption for neural networks with ﬁnite width as well as the empirical
+estimation of the kernel. The results are illustrated in Fig. 3. We can see from
+Figs. 3(a)-3(b) that (1) the predictive means are observed to be similar to the exact
+function u(x), and the predicted standard deviations from these two methods are
+quite similar, and (2) the standard deviations (i.e., uncertainty) becomes larger at
+the regions with fewer training data, i.e., x ∈[−1, −0.8] ∪[−0.2, 0.2] ∪[0.8, 1], which
+is reﬂected in the growing uncertainty due to lack of data.
+Note that the dimension of the unknown parameter θ is 2701 in our case using
+BNNs as prior. Despite the high dimensionality, HMC also provides posterior esti-
+mation (Fig. 3(b)) similar to the reference solution (Fig. 3(a)) in this case, which
+shows its eﬀectiveness in sampling from high dimensional distributions. As for the
+BNN-VI, the uncertainty at x ∈[−0.2, 0.2] is observed to be larger, while the uncer-
+tainty around x ∈[−1, −0.8] ∪[0.8, 1] is underestimated. Such results indicate that
+VI is not as accurate as HMC in posterior estimation, which could be attributed to
+11
+the fact that the samples are actually drawn from Q in Eq. (14), which is limited to
+a family that could be too small to give a reasonable approximation of the posterior
+distribution.
+(a)
+(b)
+(c)
+(d)
+(e)
+(f)
+Figure 3: Function approximation and comparison among diﬀerent approaches. (a) BNN-GPR,
+(b) BNN-HMC, (c) BNN-VI, (d) Dropout with drop rate 1%, (e) Dropout with drop rate 5%, (f)
+Dropout with drop rate 20% (4 hidden layers with 100 neurons per layer).
+Since both the architecture of the DNNs and the dropout rate are known to have
+strong eﬀects on the certainty quantiﬁcation, we test there diﬀerent cases: (1) 2
+hidden layers with 50 neurons and dropout rate 0.01, (2) 2 hidden layers with 50
+neurons and dropout rate 0.05, and (3) 4 hidden layers with 100 neurons and dropout
+rate 0.2. We use the same dropout rate at the prediction step as that used in the
+training process to quantify the uncertainty. As we can see from Figs. 3(d)-3(f), the
+uncertainties appear to be uniform for all the x ∈[−1, 1], which is not reasonable at
+all in this case. Furthermore, the predictive mean is quite diﬀerent from the exact
+function u(x) at the gap data zones, and the diﬀerences are far beyond the two
+standard deviations. To keep consistent, we will employ the same architecture of
+DNNs with the dropout as the BNNs, i.e., 2 hidden layers with 50 neurons in the
+following.
+It is worth mentioning that while the priors for the BNNs with inﬁnite width
+have been well studied [16, 21, 22], the choice of priors for BNNs with ﬁnite width
+remains an open question. More discussion about the inﬂuence of architecture of the
+12
+neural networks as well as the prior distributions of the parameters will be presented
+in Appendix A.
+3.2. Forward PDE problems
+3.2.1. 1D Poisson equation
+(a)
+(b)
+Figure 4: 1D linear Poisson equation - forward problem: predicted u and f from diﬀerent methods
+with two data noise scales. (a) ϵf ∼N(0, 0.012), ϵb ∼N(0, 0.012). (b) ϵf ∼N(0, 0.12), ϵb ∼
+N(0, 0.12).
+We consider the following linear Poisson equation:
+λ∂2
+xu = f, x ∈[−0.7, 0.7],
+(17)
+13
+where λ = 0.01. The solution for u is u = sin3(6x), and f can be derived from
+Eq. (17). Here we assume that the exact expression of f is unknown, but instead
+we have 16 sensors for f, which are equidistantly distributed in x ∈[−0.7, 0.7].
+Furthermore, we have two sensors at x = −0.7 and 0.7 to provide the left/right
+Dirichlet boundary conditions for u. We assume that all the measurements from
+the sensors are noisy, and we consider the following two diﬀerent cases: (1) ϵf ∼
+N(0, 0.012), ϵb ∼N(0, 0.012), and (2) ϵf ∼N(0, 0.12), ϵb ∼N(0, 0.12). The results
+of B-PINN-HMC, B-PINN-VI and dropout, are illustrated in Fig. 4.
+We see that the B-PINN-HMC gives reasonable posterior estimation in that (1)
+the error between the means and the exact solution is mostly bounded by the two
+standard deviations, (2) the standard deviation increases with increasing noise scale.
+However, B-PINN-VI completely failed to provide predictions to the solution u. Fi-
+nally, the prediction given by dropout seems to match the data, but the predictive
+means for u and f diﬀer from the exact solutions. We also note that the uncer-
+tainties provided by the dropout are not reasonable, e.g., (1) there is no signiﬁcant
+diﬀerences between uncertainties for u in the two cases with diﬀerent noise scale,
+and (2) a large part of the exact solution does not lie in the two standard deviation
+conﬁdence intervals.
+3.2.2. 1D nonlinear Poisson equation
+Here we consider the following 1D nonlinear PDE
+λ∂2
+xu + k tanh(u) = f, x ∈[−0.7, 0.7],
+(18)
+and we use the same solution for u as the case in Sec. 3.2.1, i.e., u = sin3(6x). In
+addition, λ = 0.01, and k = 0.7 is a constant, while f can then be derived from Eq.
+(18). We assume that we have 32 sensors for f, which are equidistantly placed in
+x ∈[−0.7, 0.7]. In addition, two sensors for u are placed at x = −0.7 and 0.7 to
+provide Dirichlet boundary conditions. Here, we also consider two diﬀerent scales of
+Gaussian noise in the measurements, i.e., (1) ϵf ∼N(0, 0.012), ϵb ∼N(0, 0.012), and
+(2) ϵf ∼N(0, 0.12), ϵb ∼N(0, 0.12), which is the same as in Sec. 3.2.1. The results
+of B-PINN-HMC, B-PINN-VI and dropout are illustrated in Fig. 5.
+14
+(a)
+(b)
+Figure 5: 1D nonlinear Poisson equation - forward problem: predicted u and f from diﬀerent
+methods with two data noise scales. (a) ϵf ∼N(0, 0.012), ϵb ∼N(0, 0.012). (b) ϵf ∼N(0, 0.12),
+ϵb ∼N(0, 0.12).
+The B-PINN-HMC provides good predictions for both u and f, which are similar
+as the results in Sec. 3.2.1. While able to give predicted means close to the exact so-
+lutions, B-PINN-VI and dropout can hardly give accurate uncertainty quantiﬁcation
+for u(x), e.g., (1) in the B-PINN-VI, the standard deviation for the case with noise
+scale 0.1 is observed to be large at the boundaries even though we have observations
+for the boundary conditions, (2) the noise scale has little inﬂuence on the predicted
+standard deviations in the two dropout cases.
+15
+3.2.3. 2D nonlinear Allen-Cahn equation
+We further consider the following nonlinear Allen-Cahn equation which is a widely
+used model for multi-phase ﬂows:
+λ(∂2
+xu + ∂2
+yu) + u(u2 −1) = f, x, y ∈[−1, 1],
+(19)
+where λ = 0.01 represents the mobility, and u is the order parameter, which denotes
+diﬀerent phases. Here, we employ the exact solution for u = sin(πx) sin(πy). In
+addition, Dirichlet boundary conditions are imposed on all the boundaries. Similarly,
+we assume that we have 500 sensors for f, which are uniformly randomly distributed
+in the domain. In addition, we also have 25 equally distributed sensors for u at each
+boundary. Here we also consider two diﬀerent noise scales on all the measurements,
+i.e., (1) ϵf ∼N(0, 0.012), ϵb ∼N(0, 0.012), and (2) ϵf ∼N(0, 0.12), ϵb ∼N(0, 0.12).
+The results of B-PINN-HMC, B-PINN-VI and dropouts, are illustrated in Fig. 6.
+Similarly, the B-PINN-HMC can provide predictive means close to the exact
+solutions, and the errors are mostly bounded by two standard deviations, which
+increases as the noise scale increases in the data. However, both the B-PINN-VI
+and the dropout with diﬀerent drop rates fail to provide accurate means as well as
+uncertainties. Speciﬁcally, (1) the errors for the predicted u from the B-PINN-VI
+and the two dropouts can be even larger than 50% in part of the domain, (2) the
+errors for u are not bounded by two standard deviations in the B-PINN-VI or in
+the two dropouts, and (3) the increase of the noise scale has little inﬂuence on the
+standard deviation when the dropout is employed.
+16
+(a)
+(b)
+Figure 6:
+2D Allen-Cahn equation - forward problem: Predicted errors and standard deviations
+for u from diﬀerent methods with two data noise scales. (a) ϵf ∼N(0, 0.012), ϵb ∼N(0, 0.012). (b)
+ϵf ∼N(0, 0.12), ϵb ∼N(0, 0.12).
+17
+3.3. Inverse PDE problems
+3.3.1. 1D diﬀusion-reaction system with nonlinear source term
+The PDE considered here is the same as Eq.
+(18).
+However, k becomes an
+unknown parameter now. The objective here is to identify k based on partial mea-
+surements of f and u.
+We assume that we have 32 sensors for f, which are equidistantly placed in
+x ∈[−0.7, 0.7].
+In addition, two sensors for u are placed at x = −0.7 and 0.7
+to provide Dirichlet boundary conditions.
+Apart from the boundary conditions,
+another 6 sensors for u are placed in the interior of the domain to help identify
+k. We also assume that Gaussian noises are present for all the measurements. Two
+diﬀerent scales of the noise are considered, i.e., (1) ϵf ∼N(0, 0.012), ϵu ∼N(0, 0.012),
+ϵb ∼N(0, 0.012) and (2) ϵf ∼N(0, 0.12), ϵu ∼N(0, 0.12), ϵb ∼N(0, 0.012).
+The results of B-PINN-HMC, B-PINN-VI and dropouts are illustrated in Fig. 7.
+The predicted means of u and f from the B-PINN-HMC ﬁt the exact functions well
+for both cases. The errors of u and f using B-PINN-VI and dropout are observed to
+be larger than those using B-PINN-HMC for the case with noise scale 0.1.
+The predicted values of k from diﬀerent methods are displayed in Table 1. The
+predicted means of k for both cases using the B-PINN-HMC are quite accurate,
+with the error less than one standard deviation. Moreover, the standard deviation
+increases as the noise scale increases. The results show the eﬀectiveness of the B-
+PINN-HMC in identifying the unknown parameter and quantifying the uncertainty
+arising from the scattered noisy data. The errors for B-PINN-VI are larger than
+B-PINN-HMC, although bounded by two standard deviations. As for the dropout,
+we use k from the last 10, 000 training steps as samples to calculate the mean and
+standard deviation, which is diﬀerent from the posterior sampling used above. We
+observe that: (1) in both cases of noise scale, the errors of the predicted means with
+both dropout rates are larger than those from B-PINN-HMC, (2) the error increases
+as we increase the dropout rates, (3) for the case with dropout rate 5%, the standard
+deviation decreases as we increase the noise scale, which is not reasonable.
+Noise scale
+B-PINN-HMC
+B-PINN-VI
+Dropout-1%
+Dropout-5%
+0.01
+Mean
+0.705
+0.708
+0.714
+0.669
+Std
+5.75 × 10−3
+4.01 × 10−3
+4.38 × 10−3
+2.02 × 10−2
+0.1
+Mean
+0.665
+0.775
+0.746
+0.633
+Std
+5.63 × 10−2
+3.58 × 10−2
+6.508 × 10−3
+6.45 × 10−3
+Table 1: 1D diﬀusion-reaction system with nonlinear source term: Predicted mean and standard
+deviation for k using diﬀerent uncertainty quantiﬁcation methods. The exact solution for k is 0.7.
+18
+(a)
+(b)
+Figure 7: 1D diﬀusion-reaction system with nonlinear source term - inverse problem: predicted u
+and f from diﬀerent methods with two data noise scales. (a) ϵf ∼N(0, 0.012), ϵu ∼N(0, 0.012),
+ϵb ∼N(0, 0.012). (b) ϵf ∼N(0, 0.12), ϵu ∼N(0, 0.12), ϵb ∼N(0, 0.012).
+3.3.2. 2D nonlinear diﬀusion-reaction system
+We consider the following PDE here
+λ(∂2
+xu + ∂2
+yu) + ku2 = f, x, y ∈[−1, 1],
+(20)
+19
+(a)
+(b)
+Figure 8: 2D nonlinear diﬀusion-reaction system: Training data for u and f. (a) Distribution of u.
+Black circle: training sample for u, (b) Distribution of f. Black cross: training samples for f.
+where λ = 0.01 is the diﬀusion coeﬃcient, k represents the reaction rate, which is
+a constant, and f denotes the source term. Here we assume that the exact value
+for k is unknown, and we only have sensors for u and f. Speciﬁcally, we have 100
+sensors which are randomly sampled in the physical domain (Fig. 8) for u and f.
+we also have 25 equally distributed sensors for u at each boundary for the Dirichlet
+boundary condition. Similarly, all the measurements are noisy and two noise scales
+are considered here, i.e., (1) ϵf ∼N(0, 0.012), ϵu ∼N(0, 0.012), ϵb ∼N(0, 0.012),
+and (2) ϵf ∼N(0, 0.12), ϵu ∼N(0, 0.12), ϵb ∼N(0, 0.012). We then aim to estimate
+the reaction rate k given the measurements of u and f.
+As we can see in Table 2, for both cases with noise scale 0.1 and 0.01, the
+predictive means using the B-PINN-HMC are quite accurate with errors less than
+5%. Also, the standard deviations, which represent the uncertainties, are in the same
+order of magnitude as the errors of predictive means. The uncertainty decreases as
+the scale of noise in data decreases.
+The results show the eﬀectiveness of these
+two models in identifying the unknown parameter and quantifying the uncertainties
+arising from the noise in data. As for the B-PINN-VI, the relative errors between
+the predicted mean value of k from and the exact k are greater than 10% for both
+cases. With regards to the dropout, the means and the standard deviations for k
+are calculated in the same way as in Sec. 3.3.1. The predicted means for k from
+the dropout with dropout rate 0.01 are quite close to the exact k. As the dropout
+rate increases to 0.05, the errors become about 17% for both cases.
+The above
+results show that the dropout rate has a strong eﬀect on the predictive accuracy.
+20
+Noise scale
+B-PINN-HMC
+B-PINN-VI
+Dropout-1%
+Dropout-5%
+0.01
+Mean
+1.003
+0.895
+1.050
+1.168
+Std
+5.75 × 10−3
+2.83 × 10−3
+2.00 × 10−3
+3.04 × 10−3
+0.1
+Mean
+0.978
+1.116
+1.020
+1.169
+Std
+4.98 × 10−2
+3.45 × 10−2
+4.21 × 10−3
+4.15 × 10−3
+Table 2: 2D nonlinear diﬀusion-reaction system: Predicted mean and standard deviation for the
+reaction rate k using diﬀerent certainty-induced methods. k = 1 is the exact solution.
+However, there is no theory on the choice of the optimal dropout, which clearly
+restricts its usefulness in applications. In addition, the inﬂuence of the noise scales
+on the standard deviations is not signiﬁcant, indicating dropout is not suitable for
+quantifying uncertainty from noisy data.
+4. Comparison with PINNs
+In this section, we will conduct a comparison between the B-PINN-HMC and
+PINN for the 1D inverse problem in Sec. 3.3.1. We employ the Adam optimizer with
+l = 10−3, β1 = 0.9, β2 = 0.999 to train the PINN, with the number of the training
+steps set as 200, 000. The results of the PINN are shown in Fig. 9. Note that the
+PINNs cannot quantify uncertainties of the predictive results.
+(a)
+(b)
+Figure 9: 1D diﬀusion-reaction system with nonlinear source term (PINNs): Predicted u and f with
+two data noise scales. (a) ϵf ∼N(0, 0.012), ϵu ∼N(0, 0.012), ϵb ∼N(0, 0.012). (b) ϵf ∼N(0, 0.12),
+ϵu ∼N(0, 0.012), ϵb ∼N(0, 0.12).
+As shown in Fig. 9, the predicted u and f could ﬁt all the training points. In
+the cases where the noise scale is as small as 0.01, the predictive u and f agree well
+with the exact solutions. However, as the noise scale increases to 0.1, signiﬁcant
+overﬁtting is observed in PINNs. In addition, PINNs predict k to be 0.705 and 0.591
+for the noise lebel at 0.01 and 0.1, respectively, while the reference exact solution
+21
+is 0.7. Comparing with the results of B-PINN-HMC in Table 1, we conclude that
+PINNs can provide prediction with similar accuracy as the B-PINN-HMC for the
+case with small noise in data, while B-PINN-HMC shows signiﬁcant advantange in
+accuracy over PINNs for the case with large noise.
+Now, we conduct a brief comparison on the computational cost between PINN and
+B-PINN-HMC based on the inverse problem. We run both the PINN and B-PINN-
+HMC codes on two CPUs (Intel Xeon E5-2643). For the PINN, the computational
+time is about 10 minutes, while it takes about 20 minutes for the B-PINN-HMC.
+Despite this relatively small increase for B-PINN verse PINN for this small problem,
+we expect that when we scale up the data size and neural network size the diﬀerence
+in cost will increase accordingly. Considering the accuracy as well as the reliable
+uncertainty provided, the B-PINN-HMC may be a better approach than the PINNs
+for scenarios with large noise.
+5. Comparison with the truncated Karhunen-Lo`eve expansion
+So far we have shown the eﬀectiveness of B-PINNs in solving PDE problems.
+As we know, a neural network is extremely overparametrized. Hence, we want to
+investigate if we can we use other models with less parameters for our surrogate
+model in the Bayesian framework. For example, we consider the Karhunen-Lo`eve
+expansion, a widely used representation for a stochastic process in the following
+study.
+5.1. Truncated Karhunen-Lo`eve expansion
+Assume u(x) is a stochastic process with mean µ(x) and covariance function (also
+called “kernel”) k(x, x′), then the KL expansion of u is
+u(x) = µ(x) +
+∞
+X
+i=1
+√αiψi(x)θi,
+(21)
+where ψi are the orthogonal eigenfunctions, αi are the corresponding eigenvalues of
+the kernel, and θi are mutually uncorrelated random variables. In practice, we could
+truncate the expansion to n terms as our surrogate model for u:
+˜u(x; θ) = µ(x) +
+n
+X
+i=1
+√αiψi(x)θi,
+(22)
+where θ = (θ1, θ2...θn) is the parameter in the surrogate model whose prior distribu-
+tion is given by the KL expansion.
+22
+One of the main diﬀerences between the truncated Karhunen-Lo`eve expansion
+and neural networks as surrogate models is the number of parameters. For example,
+in this paper, the neural network used in 1D problems has 2701 parameters. As
+a comparison, the truncated Karhunen-Lo`eve expansion used in Sec. 5.2 only has
+20 parameters. The small number of parameters makes it possible to use another
+approach to sample from the posterior, namely the deep normalizing ﬂow (DNF)
+models.
+In general, using DNF to sample from a target distribution ν consists of the
+following three steps [20]:
+1. Deﬁne a bijective transformation G : Rdθ →Rdθ and prescribe an input dis-
+tribution µI of the dimension Rdθ.
+Usually, the bijective transformation is
+parameterized by deep neural networks and the input distribution can be a
+standard multivariate Gaussian distribution.
+2. Note that the bijective transformation G will map the input distribution to an
+output distribution µO = G#µI. We then train the parameters in G to min-
+imize F(µO, ν), where F is a functional that measures the diﬀerence between
+two distributions. Ideally, µO and ν will be suﬃciently close to each other after
+this procedure.
+3. Finally, we sample from the input distribution µI, denoted as {z(j)}M
+j=1. Then
+{G(z(j))}M
+j=1 as samples of µO can be used to approximate the statistics of ν.
+We leave the details of the DNF in Appendix B.
+5.2. Results and Comparisons
+In this section we apply the truncated Karhunen-Lo`eve expansion to solve the
+forward and inverse nonlinear PDE problems as described in Sec. 3.2.2 and Sec. 3.3.1.
+In particular, we consider the Gaussian process of zero mean and exponential kernel
+k(x, x′) = exp(−|x −x′|
+0.25 ),
+x ∈[−1, 1],
+(23)
+and use the ﬁrst 20 terms of the KL expansion as our surrogate model for u, which
+retains about 92% of the energy. For this case, the eigenvalues and eigenfunctions in
+the KL expansion are solved analytically, and the prior for the unknown parameters
+is the product of independent standard Gaussian distributions. We refer the readers
+to example 4.1 in Chapter 4 in [26] for details.
+The predicted u and f are illustrated in Figs. 10-11. The results from the KL-
+HMC and KL-DNF are almost the same, and the predicted means for u and f are
+close to the exact solutions. In addition, the predicted k is displayed in Table 3.
+23
+(a)
+(b)
+Figure 10: 1D nonlinear Poisson equation (KL) - forward problem: Predicted u and f with two
+data noise scales. (a): ϵf ∼N(0, 0.012), ϵb ∼N(0, 0.012). (b): ϵf ∼N(0, 0.12), ϵb ∼N(0, 0.12).
+(a)
+(b)
+Figure 11: 1D diﬀusion-reaction system with nonlinear source term (KL): Predicted u and f with
+two data noise scales. (a) ϵf ∼N(0, 0.012), ϵu ∼N(0, 0.012), ϵb ∼N(0, 0.012). (b) ϵf ∼N(0, 0.12),
+ϵu ∼N(0, 0.12), ϵb ∼N(0, 0.012).
+24
+Noise scale
+KL-HMC
+KL-DNF
+0.01
+Mean
+0.706
+0.705
+Std
+5.63 × 10−3
+2.63 × 10−3
+0.1
+Mean
+0.694
+0.709
+Std
+5.82 × 10−2
+5.21 × 10−2
+Table 3: 1D diﬀusion-reaction system with nonlinear source term (KL): Predicted mean and stan-
+dard deviation for k using KL. The exact solution for k is 0.7.
+Similarly, the predicted means for both cases ﬁt the exact solution quite well. Fur-
+thermore, we also note that (1) the standard deviation increases with the increasing
+noise scale, and (2) the errors are bounded by two standard deviations.
+All the
+results are similar as those from the B-PINNs presented in Sec. 3.2.2 and Sec. 3.3.1.
+As for the computational cost, the DNF takes about one day to ﬁnish the training
+for the 1D diﬀusion-reaction problem, while it takes about 4 mins for the HMC.
+Although the DNF is computationally much more expensive than the HMC, we
+would like to remark that upon completion of the training, it is more convenient to
+draw independent samples from the target distribution using DNF compared with
+HMC. This strength of DNF has no signiﬁcant beneﬁt in current work, but could be
+helpful for other tasks.
+Here, we also conduct a brief comparison on the computational cost between the
+KL-HMC and the B-PINN-HMC based on the 1D diﬀusion-reaction problem. Due
+to the relatively small number of parameters in the truncated KL expansion, in the
+1D test cases, KL-HMC takes much less time than B-PINN-HMC. In particular,
+KL-HMC takes about 4 mins compared to about 20 mins for B-PINN-HMC. How-
+ever, we remark that the truncated KL expansion would suﬀer from the “curse of
+dimensionality” when approximating high dimensional functions, while deep neural
+networks are known to be eﬃcient for high-dimensional function approximation [27].
+6. Summary
+There are many sources of uncertainty in data-driven PDE solvers, including
+aleatoric uncertainty associated with noisy data, epistemic uncertainty associated
+with unknown parameters, and model uncertainty associated with the type of PDE
+that models the target phenomena. In this paper, we address aleatoric uncertainty for
+solving forward and inverse PDE problems, based on noisy data associated with the
+solution, source terms and boundary conditions. In particular, we employ physics-
+informed neural networks (PINNs) to solve PDEs, using automatic diﬀerentiation,
+with the accuracy of the solution depending critically on the quality of the training
+25
+data.
+In order to quantify uncertainty and improve the accuracy of PINNs, we pro-
+pose a general Bayesian framework, consisting of a Bayesian neural network for the
+solution, subject to the PDE constraint that serves as a prior, combined with dif-
+ferent estimators for the posterior, namely, the Hamiltonian Monte Carlo (HMC)
+method and the variational inference (VI). We conduct a comprehensive comparison
+among diﬀerent methods, i.e., the B-PINN with HMC, B-PINN with VI, and PINN
+with dropout, which is also used to quantify the uncertainty of neural networks.
+We investigate both linear and nonlinear PDEs with noisy data. Our experiments
+demonstrate good accuracy and robustness of B-PINN-HMC, but B-PINN-VI usu-
+ally gives unreasonable uncertainties, which could be attributed to the fact that
+the posterior distribution is approximated by a factorizable Gaussian distribution.
+Moreover, dropout which is not based on the Bayesian framework can hardly provide
+satisfactory uncertainty quantiﬁcation, in agreement with [24]. In addition, we also
+compare the performance of the B-PINN-HMC with the PINNs. The results show
+that PINNs could easily overﬁt the noisy data and get less accurate results than
+B-PINN-HMC.
+As an alternative surrogate model, we replace the BNN with a truncated KL
+expansion and combine it with HMC or deep normalizing ﬂow (DNF) models for
+estimating the posterior. We repeated some of the experiments and found that both
+KL-HMC and KL-DNF yield equally accurate results as B-PINN-HMC, but at a
+reduced cost for KL-HMC. This KL-based Bayesian framework could also be very ef-
+fective in uncertainty quantiﬁcation of data-driven PDE solvers, but is limited to low
+dimensional problems. We explored the possibility of DNF as a posterior estimator
+in the KL-based Bayesian framework. While much more computationally expensive
+than HMC, upon completion of training, DNF can draw independent samples more
+easily from the target distribution. This strength of DNF has no signiﬁcant beneﬁt
+in the current Bayesian framework, but could be helpful for other tasks.
+While the choice of priors for B-PINNs may have a signiﬁcant inﬂuence on the
+posterior predictions especially in the cases with small data, such choice of priors,
+including the structure of neural networks and the prior distribution for the param-
+eters, remains an open problem. Also, in the current work, we only tested the cases
+where the data size is up to several hundreds; for the big data case, we may need
+to use other posterior sampling methods in conjunction with mini-batch techniques,
+like stochastic HMC [28, 29, 30], which needs further investigation in the future.
+26
+Acknowledgement
+This work was supported by the PhILMS grant DE-SC0019453, the DARPA-
+AIRA grant HR00111990025 and the NIH-Yale grant U01 HL142518.
+Appendix A. BNNs with diﬀerent priors
+(a)
+(b)
+(c)
+(d)
+(e)
+Figure A.12: Covariance functions k(x1, x2) = cov(˜u(x1), ˜u(x2)) for BNNs with diﬀerent archi-
+tectures.
+L = 2, σb,l = 1 for l = 0, 1, 2 in all the cases.
+(a) N1 = N2 = 20, σw,0 = 1.0,
+σw,1 = σw,2 =
+p
+5/2 (b) N1 = N2 = 50, σw,0 = σw,1 = σw,2 = 1.0, (c) N1 = N2 = 100,
+σw,0 = 1.0, σw,1 = σw,2 =
+p
+1/2. (d) N1 = N2 = 20, σw,0 = σw,1 = σw,2 = 1.0, (e) N1 = N2 = 100,
+σw,0 = σw,1 = σw,2 = 1.0.
+The posterior distribution depends on both the prior and the observed data in
+the Bayesian framework. Given the same observation, surrogate models with similar
+prior distributions should also provide similar posterior distributions. For the cases of
+input dimension Nx = 1, we illustrate the covariance functions for ﬁve representative
+priors in Fig. A.12, which are estimated from 100, 000 independent samples of neural
+27
+(a)
+(b)
+(c)
+(d)
+Figure A.13: BNN-HMC with diﬀerent priors for function approximation. (a) L = 2, N1 = N2 = 20,
+ω1 = ω2 ∼N(0,
+p
+5/2), (b) L = 2, N1 = N2 = 100, ω1 = ω2 ∼N(0,
+p
+1/2), (c) L = 2, N1 = N2 =
+20, ω1 = ω2 ∼N(0, 1), (d) L = 2, N1 = N2 = 100, ω1 = ω2 ∼N(0, 1).
+network parameters drawn from the prior. Note that √Nlσw,l is ﬁxed for cases (a),
+(b) and (c), and we can see that the covariance functions are similar for the three
+cases.
+We plot the results for approximating the same function in Eq. (16) with same
+data, using BNNs with diﬀerent architectures in Fig. A.13. The predicted means
+and standard deviations are observed to be quite similar for cases in Figs. A.13(a)-
+A.13(c), which is consistent with the fact that the covariance functions of the priors
+for these three cases are similar (Figs. A.12(a)-A.12(c)). In addition, the results in
+Figs. A.13(c)-A.13(d) are diﬀerent from those in Fig. 3(e), which is not surprising
+since their covariance functions are totally diﬀerent (Fig. A.12).
+Appendix B. Deep Normalizing Flow Models
+Deep normalizing ﬂow (DNF) models provide a powerful mechanism for sampling
+from a wide range of probability distributions. While there have been many versions
+of normalizing ﬂow models, as a demonstrating example, in this paper we use a
+potential ﬂow to build the bijective transformation. We refer the readers to [20, 31]
+for similar approaches. In particular, the bijective transformation G is deﬁned as the
+map from u at time t = 0 to T of the following ODE:
+du
+dt = ∇ϕ(u, t; ζ),
+(B.1)
+where ϕ(u, t; ζ) is represented by a deep neural network with parameter ζ, which
+takes the concatenation of u and t as input, and outputs a real number. Conse-
+quently, we have the following ODE for the probability density:
+d ln P(u(t), t)
+dt
+= −∇2ϕ(u, t; ζ),
+(B.2)
+28
+where P(u, 0) = PµI(u) is the density of µI at u, and P(u, T) = PµO(u) is the
+density of µO at u.
+Here, we use the forward Euler scheme to solve the ODE (B.1). Suppose the time
+step is δt = T/n, then
+u0(z) = z,
+ui(z) = ui−1(z) + δt∇ϕ(ui−1(z), (i −1)T
+n
+; ζ),
+i = 1, 2...n
+(B.3)
+so that G(z) = un(z). Similarly, we have the forward Eular scheme for ODE (B.2):
+ln P0(u0(z)) = ln PµI(z),
+ln Pi(ui(z)) = ln Pi−1(ui−1(z)) −δt∇2ϕ(ui−1(z), (i −1)T
+n
+; ζ),
+i = 1, 2...n
+(B.4)
+so that ln P(G(z), T) = ln Pn(un(z)).
+For our problems, where the target distribution ν is given by the posterior density
+P(θ|D), we tune the parameters in ϕ to minimize
+F(µO, ν) = DKL(µO||ν)
+= Eθ∼µO[ln P(θ, T) −ln P(θ|D)]
+≃Eθ∼µO[ln P(θ, T) −ln P(θ) −ln P(D|θ)]
+= Ez∼µI[ln P(G(z), T) −ln P(G(z)) −ln P(D|G(z))],
+(B.5)
+where DKL represents the Kullback-Leibler divergence, and “≃” represents equality
+up to a constant. In this paper we employ the Adam optimizer to train ζ.
+Ideally, µO and ν would be suﬃciently close to each other after the convergence
+of F(µO, ν). We could then sample {z(j)}M
+j=1 from µI, and get statistics of P(θ|D)
+from {G(z(j))}M
+j=1.
+The detailed algorithm is given in Algorithm 3.
+Algorithm 3 Normalizing Flow
+Require: an initial state for ζ.
+for k = 1, 2...N do
+Sample {z(j)}Nz
+j=1 independently from µI.
+L(ζ) ←
+1
+Nz
+PNz
+j=1[ln P(G(z(j)), T) −ln P(G(z(j))) −ln P(D|G(z(j)))].
+Update ζ with gradient ∇ζL(ζ) using Adam optimizer.
+end for
+Sample {z(j)}M
+j=1 independently from µI.
+Calculate {˜u(x, G(z(j)))}M
+j=1 as samples of u(x), similarly for other terms.
+29
+In this paper, we set time span T = 1, and time steps in the forward Euler scheme
+n = 50 in the forward problems, while n = 10 in the inverse problems. The neural
+networks for ϕ have 3 hidden layers, each of width 128. For all the cases, the total
+training steps N = 100, 000 and batch size Nz = 16. The hyperparameters for the
+Adam optimizer are set as l = 10−4, β1 = 0.9, β2 = 0.999.
+References
+[1] Y. LeCun, Y. Bengio, G. Hinton, Deep Learning, Nature 521 (2015) 436–444.
+[2] S. H. Rudy, S. L. Brunton, J. L. Proctor, J. N. Kutz, Data-driven discovery of
+partial diﬀerential equations, Sci. Adv. 3 (2017) e1602614.
+[3] N. M. Mangan, J. N. Kutz, S. L. Brunton, J. L. Proctor, Model selection for
+dynamical systems via sparse regression and information criteria, P. Roy. Soc.
+A Math. Phy. 473 (2017) 20170009.
+[4] S. L. Brunton, J. N. Kutz, Data-Driven Science and Engineering: Machine
+learning, Dynamical systems, and Control, Cambridge University Press, 2019.
+[5] J. Berg, K. Nystr¨om, Data-driven discovery of PDEs in complex datasets, J.
+Comp. Phys. 384 (2019) 239–252.
+[6] M. Raissi, P. Perdikaris, G. E. Karniadakis, Physics-informed neural networks:
+A deep learning framework for solving forward and inverse problems involving
+nonlinear partial diﬀerential equations, J. Comp. Phys. 378 (2019) 686–707.
+[7] M. Raissi, P. Perdikaris, G. E. Karniadakis, Machine learning of linear diﬀeren-
+tial equations using Gaussian processes, J. Comp. Phys. 348 (2017) 683–693.
+[8] L. Lu, X. Meng, Z. Mao, G. E. Karniadakis, DeepXDE: A deep learning library
+for solving diﬀerential equations, arXiv preprint arXiv:1907.04502 (2019).
+[9] D. Zhang, L. Lu, L. Guo, G. E. Karniadakis, Quantifying total uncertainty
+in physics-informed neural networks for solving forward and inverse stochastic
+problems, J. Comp. Phys. 397 (2019) 108850.
+[10] L. Yang, D. Zhang, G. E. Karniadakis, Physics-informed generative adversarial
+networks for stochastic diﬀerential equations, SIAM J. Sci. Comput. 42 (2020)
+A292–A317.
+30
+[11] X. Meng, G. E. Karniadakis,
+A composite neural network that learns from
+multi-ﬁdelity data: Application to function approximation and inverse PDE
+problems, J. Comp. Phys. 401 (2020) 109020.
+[12] X. Meng, Z. Li, D. Zhang, G. E. Karniadakis, PPINN: Parareal physics-informed
+neural network for time-dependent PDEs,
+arXiv preprint arXiv:1909.10145
+(2019).
+[13] Z. Mao, A. D. Jagtap, G. E. Karniadakis, Physics-informed neural networks for
+high-speed ﬂows, Comput. Methods Appl. M. 360 (2020) 112789.
+[14] X. Luo, A. Kareem, Bayesian deep learning with hierarchical prior: Predictions
+from limited and noisy data, Struct. Saf. 84 (2020) 101918.
+[15] R. M. Neal, et al., MCMC using Hamiltonian Dynamics, Handbook of Markov
+Chain Monte Carlo 2 (2011) 2.
+[16] R. M. Neal, Bayesian learning for neural networks, volume 118, Springer Science
+& Business Media, 2012.
+[17] A. Graves, Practical variational inference for neural networks, in: Advances in
+Neural Nnformation Processing Systems, 2011, pp. 2348–2356.
+[18] C. Blundell, J. Cornebise, K. Kavukcuoglu, D. Wierstra, Weight uncertainty in
+neural networks, arXiv preprint arXiv:1505.05424 (2015).
+[19] Y. Gal, Z. Ghahramani, Dropout as a Bayesian approximation: Representing
+model uncertainty in deep learning, in: International Conference on Machine
+Learning, 2016, pp. 1050–1059.
+[20] L. Yang, G. E. Karniadakis, Potential ﬂow generator with L2 optimal transport
+regularity for generative models, arXiv preprint arXiv:1908.11462 (2019).
+[21] J. Lee, Y. Bahri, R. Novak, S. S. Schoenholz, J. Pennington, J. Sohl-Dickstein,
+Deep neural networks as Gaussian processes, arXiv preprint arXiv:1711.00165
+(2017).
+[22] G. Pang, L. Yang, G. E. Karniadakis,
+Neural-net-induced Gaussian process
+regression for function approximation and PDE solution, J. Comp. Phys. 384
+(2019) 270–288.
+[23] M. Betancourt, A conceptual introduction to Hamiltonian Monte Carlo, arXiv
+preprint arXiv:1701.02434 (2017).
+31
+[24] J. Yao, W. Pan, S. Ghosh, F. Doshi-Velez, Quality of uncertainty quantiﬁcation
+for Bayesian neural network inference, arXiv preprint arXiv:1906.09686 (2019).
+[25] D. P. Kingma, J. Ba,
+Adam: A method for stochastic optimization,
+arXiv
+preprint arXiv:1412.6980 (2014).
+[26] D. Xiu, Numerical methods for stochastic computations: a spectral method
+approach, Princeton University Press, 2010.
+[27] P. Cheridito,
+A. Jentzen,
+F. Rossmannek,
+Eﬃcient approximation of
+high-dimensional functions with deep neural networks,
+arXiv preprint
+arXiv:1912.04310 (2019).
+[28] T. Chen, E. Fox, C. Guestrin, Stochastic gradient Hamiltonian Monte Carlo,
+in: International Conference on Machine Learning, 2014, pp. 1683–1691.
+[29] N. Ding, Y. Fang, R. Babbush, C. Chen, R. D. Skeel, H. Neven, Bayesian sam-
+pling using stochastic gradient thermostats, in: Advances in Neural Information
+Processing Systems, 2014, pp. 3203–3211.
+[30] Y. A. Ma, T. Chen, E. Fox, A complete recipe for stochastic gradient MCMC,
+in: Advances in Neural Information Processing Systems, 2015, pp. 2917–2925.
+[31] L. Zhang, L. Wang, et al., Monge-Ampere ﬂow for generative modeling, arXiv
+preprint arXiv:1809.10188 (2018).
+32

@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.models.PINN import PINN
 from src.models.BNN import BNN
-from src.physics.PDEs import Poisson1D
+from src.physics.PDEs import Poisson1D, PDEProblem
 from src.utils.plotting import plot_1d_pinn, plot_1d_bpinn, plot_loss_curves
 from src.utils.training import train_pinn, train_bpinn
 
@@ -20,29 +20,46 @@ from src.utils.training import train_pinn, train_bpinn
 
 def run_poisson_experiment():
     # 1. Setup Data and Physics
+    # Domain is [-0.7, 0.7]
     # Boundary data (x_b, y_b)
-    x_b = torch.tensor([[-1.0], [1.0]], dtype=torch.float32)
-    y_b = torch.tensor([[0.0], [0.0]], dtype=torch.float32)
+    x_b = torch.tensor([[-0.7], [0.7]], dtype=torch.float32)
+    # The true solution is u(x) = sin^3(6x)
+    y_b = torch.sin(6 * x_b) ** 3
     
-    # Collocation points (x_f), forcing term measurements (y_f)
-    x_f = torch.linspace(-1, 1, 20).view(-1, 1).requires_grad_(True)
-    y_f = - (torch.pi ** 2) * torch.sin(torch.pi * x_f).detach()
+    # Collocation points (x_f) for forcing term, 16 equidistant sensors
+    x_f = torch.linspace(-0.7, 0.7, 16).view(-1, 1).requires_grad_(True)
     
-    # Add noisy data mirroring the standard testing setup
-    y_b = y_b + torch.randn_like(y_b) * 0.1
-    y_f = y_f + torch.randn_like(y_f) * 0.1
+    # Analytical forcing term f = \lambda u_xx where \lambda = 0.01
+    # u = sin^3(6x)
+    # u_x = 18 * sin^2(6x) * cos(6x)
+    # u_xx = 108 * (2 * sin(6x) * cos^2(6x) - sin^3(6x))
+    # f = 0.01 * u_xx
+    y_f = 0.01 * 108.0 * (2 * torch.sin(6 * x_f) * (torch.cos(6 * x_f) ** 2) - (torch.sin(6 * x_f) ** 3)).detach()
     
-    sigma_u = 0.1
-    sigma_f = 0.1
+    # Add noisy data mirroring the paper's testing setup (Case 2: 0.1 scale)
+    noise_scale = 0.1
+    y_b = y_b + torch.randn_like(y_b) * noise_scale
+    y_f = y_f + torch.randn_like(y_f) * noise_scale
     
-    pde_problem = Poisson1D(x_f, y_f, sigma_f)
+    sigma_u = noise_scale
+    sigma_f = noise_scale
+    
+    class ScaledPoisson1D(PDEProblem):
+        def compute_residual(self, u_func, x, params=None):
+            u = u_func(x)
+            u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+            u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
+            return 0.01 * u_xx - self.y_f
+            
+    pde_problem = ScaledPoisson1D(x_f, y_f, sigma_f)
     
     # =========================================================================
     # Standard PINN Baseline
     # =========================================================================
     print("========================================")
     print("Training Standard PINN baseline...")
-    pinn_model = PINN(input_dim=1, output_dim=1, hidden_dims=[20, 20])
+    # Exact architecture from Yang et al. 2020: 2 hidden layers with 50 neurons
+    pinn_model = PINN(input_dim=1, output_dim=1, hidden_dims=[50, 50])
     
     pinn_model, history = train_pinn(
         model=pinn_model,
@@ -51,8 +68,8 @@ def run_poisson_experiment():
         y_b=y_b,
         x_f=x_f,
         y_f=y_f,
-        epochs=1000,
-        lr=1e-3
+        epochs=3000,
+        lr=2e-3
     )
 
     # =========================================================================
@@ -60,7 +77,7 @@ def run_poisson_experiment():
     # =========================================================================
     print("\n========================================")
     print("Training B-PINN (HMC)...")
-    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[20, 20])
+    bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[50, 50])
     
     samples = train_bpinn(
         model=bnn_model,
@@ -72,9 +89,10 @@ def run_poisson_experiment():
         sigma_u=sigma_u,
         sigma_f=sigma_f,
         M=100,
-        N=200,
-        L=20,
-        delta_t=0.01
+        N=1000,
+        L=50,
+        delta_t=0.0001,
+        theta_0=None
     )
     
     # =========================================================================
@@ -84,7 +102,7 @@ def run_poisson_experiment():
     print("Generating plots...")
     
     def true_u(x):
-        return np.sin(np.pi * x)
+        return np.sin(6 * x) ** 3
         
     plot_loss_curves(
         history=history,

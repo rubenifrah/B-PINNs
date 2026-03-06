@@ -29,6 +29,17 @@ class Poisson1D(PDEProblem):
         u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
         return u_xx - self.y_f # residual: u_xx - f = 0
 
+class ScaledPoisson1D(PDEProblem):
+    def __init__(self, x_f, y_f, sigma_f, lambda_param=0.01):
+        super().__init__(x_f, y_f, sigma_f)
+        self.lambda_param = lambda_param
+        
+    def compute_residual(self, u_func, x, params=None):
+        u = u_func(x, params)
+        u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+        u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0]
+        return self.lambda_param * u_xx - self.y_f # residual: u_xx - f = 0
+
 class Burgers1D(PDEProblem):
     """
     1D Burgers equation: u_t + u * u_x = nu * u_xx

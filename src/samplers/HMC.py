@@ -50,8 +50,6 @@ def HMC_sampler(model, M, N, delta_t, theta_0, L, Mass_matrix=torch.eye(1), **kw
             # 1. Half step for momentum
             # We get the gradient. The gradient function automatically handles its own internal graph.
             grad_U_half = model.gradient(theta_i, **kwargs)
-            # Clip gradients to prevent explosion during leapfrog
-            grad_U_half = torch.clamp(grad_U_half, -10.0, 10.0)
             
             with torch.no_grad():
                 r_i = r_i - (delta_t / 2.0) * grad_U_half
@@ -61,7 +59,6 @@ def HMC_sampler(model, M, N, delta_t, theta_0, L, Mass_matrix=torch.eye(1), **kw
                 
             # 3. Half step for momentum
             grad_U_full = model.gradient(theta_i, **kwargs)
-            grad_U_full = torch.clamp(grad_U_full, -10.0, 10.0)
             
             with torch.no_grad():
                 r_i = r_i - (delta_t / 2.0) * grad_U_full
@@ -78,6 +75,9 @@ def HMC_sampler(model, M, N, delta_t, theta_0, L, Mass_matrix=torch.eye(1), **kw
         H_diff = torch.clamp(H_old - H_new, max=20.0, min=-50.0).item()
         alpha = min(1.0, math.exp(H_diff))
         
+        if k <= 5:
+            print(f"Step {k}: H_old={H_old.item():.4f}, H_new={H_new.item():.4f}, diff={H_diff:.4f}, alpha={alpha:.4f}, accepted={p < alpha}")
+            
         if p < alpha:
             # accept the proposal
             states[:, k] = theta_i

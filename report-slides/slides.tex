@@ -1,0 +1,444 @@
+\documentclass[10pt, aspectratio=169]{beamer}
+
+% Theme and styling
+\usetheme{Madrid}
+\usecolortheme{default}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+% Write the bibliography file directly
+\usepackage{filecontents}
+\begin{filecontents}{references.bib}
+@article{Brooks_2011,
+   title={Handbook of Markov Chain Monte Carlo},
+   publisher={Chapman and Hall/CRC},
+   author={Brooks, Steve and Gelman, Andrew and Jones, Galin and Meng, Xiao-Li},
+   year={2011}
+}
+@article{Yang_2021,
+   title={B-PINNs: Bayesian physics-informed neural networks for forward and inverse PDE problems with noisy data},
+   volume={425},
+   journal={Journal of Computational Physics},
+   publisher={Elsevier BV},
+   author={Yang, Liu and Meng, Xuhui and Karniadakis, George Em},
+   year={2021},
+   pages={109913}
+}
+@misc{lakshminarayanan2017simplescalablepredictiveuncertainty,
+      title={Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles}, 
+      author={Balaji Lakshminarayanan and Alexander Pritzel and Charles Blundell},
+      year={2017},
+      archivePrefix={arXiv}
+}
+@article{NLL,
+ author = {Lakshminarayanan, Balaji and Pritzel, Alexander and Blundell, Charles},
+ title = {Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles},
+ volume = {30},
+ year = {2017}
+}
+@article{picp_mpiw,
+  author={Khosravi, Abbas and Nahavandi, Saeid and Creighton, Doug and Atiya, Amir F.},
+  journal={IEEE Transactions on Neural Networks}, 
+  title={Comprehensive Review of Neural Network-Based Prediction Intervals and New Advances}, 
+  year={2011},
+  volume={22},
+  number={9},
+  pages={1341-1356}
+}
+@inproceedings{ECE,
+  title = {On Calibration of Modern Neural Networks},
+  author = {Chuan Guo and Geoff Pleiss and Yu Sun and Kilian Q. Weinberger},
+  booktitle = {Proceedings of the 34th International Conference on Machine Learning},
+  pages = {1321--1330},
+  year = {2017},
+  volume = {70}
+}
+@inproceedings{Lee2018,
+  title={Deep Neural Networks as Gaussian Processes},
+  author={Jaehoon Lee and Yasaman Bahri and Roman Novak and Samuel S. Schoenholz and Jeffrey Pennington and Jascha Sohl-Dickstein},
+  booktitle={International Conference on Learning Representations},
+  year={2018}
+}
+\end{filecontents}
+
+% Title Page Information
+\title[Bayesian PINNs]{Bayesian Physics-Informed Neural Networks}
+\author[Ruer, Ifrah, Forcioli]{Anouk Ruer \and Ruben Ifrah \and P\'en\'elope Forcioli}
+\date{2024}
+
+\begin{document}
+
+% Slide 1: Title
+\begin{frame}
+    \titlepage
+\end{frame}
+
+% =========================================================================
+% B-PINNs Presentation — Paper slides only (no extension)
+% 5 slides, ~6 minutes
+% =========================================================================
+
+% -------------------------------------------------------------------
+% Slide 1: Motivation & Problem Statement
+% -------------------------------------------------------------------
+\begin{frame}{Motivation \& Problem Statement}
+    \textbf{Standard PINNs:}
+    \begin{itemize}
+        \item Learn PDE solutions using limited data and physical laws via deterministic gradient descent.
+        \item \textbf{Limitation:} They lack built-in uncertainty quantification and are highly prone to overfitting when sensor data is noisy.
+    \end{itemize}
+    \vspace{0.5cm}
+    \textbf{The Solution: Bayesian PINNs (B-PINNs) \cite{Yang_2021}}
+    \begin{itemize}
+        \item Extend standard PINNs into a Bayesian framework.
+        \item Treat neural network weights probabilistically rather than as fixed values.
+        \item Yields a \textit{distribution} of possible solutions, providing natural uncertainty quantification.
+    \end{itemize}
+\end{frame}
+
+% -------------------------------------------------------------------
+% Slide 2: The B-PINN Framework
+% -------------------------------------------------------------------
+\begin{frame}{The B-PINN Framework}
+
+    \textbf{General PDE setup:}
+    \[
+        \mathcal{N}_x(u;\lambda) = f, \qquad
+        \mathcal{B}_x(u;\lambda) = b
+    \]
+    Dataset $\mathcal{D} = \mathcal{D}_u \cup \mathcal{D}_f \cup \mathcal{D}_b$ 
+    of noisy sensor measurements:
+    \[
+        \bar{u}^{(i)} = u(\boldsymbol{x}_u^{(i)}) + \epsilon_u^{(i)}, \quad
+        \bar{f}^{(i)} = f(\boldsymbol{x}_f^{(i)}) + \epsilon_f^{(i)}, \quad
+        \bar{b}^{(i)} = f(\boldsymbol{x}_b^{(i)}) + \epsilon_b^{(i)}, \quad
+        \epsilon \sim \mathcal{N}(0, \sigma^2)
+    \]
+
+    \vspace{0.3cm}
+    \textbf{BNN surrogate} $\tilde{u}(x;\boldsymbol{\theta})$ approximates $u$, 
+    from which $f$ and $b$ are derived via automatic differentiation:
+    \[
+        \tilde{f}(x;\boldsymbol{\theta}) = \mathcal{N}_x(\tilde{u}(x;\boldsymbol{\theta});\lambda),
+        \qquad
+        \tilde{b}(x;\boldsymbol{\theta}) = \mathcal{B}_x(\tilde{u}(x;\boldsymbol{\theta});\lambda)
+    \]
+
+    \vspace{0.3cm}
+    \textbf{Gaussian prior} A Gaussian prior is placed independently on each component of the network weights $\theta$;  
+    $P(\boldsymbol{\theta}) = \mathcal{N}(\boldsymbol{0}, \boldsymbol{I})$
+
+    \vspace{0.2cm}
+    \textbf{Posterior} by Bayes' theorem:
+    \[
+        P(\boldsymbol{\theta} \mid \mathcal{D}) \;\propto\; 
+        \underbrace{P(\mathcal{D} \mid \boldsymbol{\theta})}_{\text{physics-informed likelihood}} 
+        \cdot 
+        P(\boldsymbol{\theta})
+    \]
+
+\end{frame}
+
+% -------------------------------------------------------------------
+% Slide 3: Posterior Sampling Approaches
+% -------------------------------------------------------------------
+\begin{frame}{Posterior Sampling Approaches}
+    \vspace{0.3cm}
+    \textbf{1. Hamiltonian Monte Carlo (HMC)}
+    \begin{itemize}
+        \item Introduces auxiliary momentum variable; simulates Hamiltonian dynamics.
+        \item Makes large, informed moves — avoids random-walk behavior.
+        \item \textbf{Asymptotically exact} samples from the true posterior.
+        \item Cost: computationally expensive.
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{2. Variational Inference (VI)}
+    \begin{itemize}
+        \item Recasts inference as optimisation — minimises KL divergence.
+        \item Fits a \textbf{fully factorised Gaussian}: each weight assumed independent.
+        \item Fast, but the mean-field assumption \textbf{underestimates posterior variance} — overconfident under high noise.
+    \end{itemize}
+    
+    The Dropout is introduced as a cheap baseline.\and
+
+\end{frame}
+
+% -------------------------------------------------------------------
+% Slide 4: Results — Forward Problem
+% -------------------------------------------------------------------
+\begin{frame}{Key Findings from the Baseline Study}
+    \begin{figure}{\textwidth} 
+        \centering
+        \includegraphics[width=\linewidth]{Figures/picture_paper.png}
+    \end{figure}
+    Systematic comparison of standard PINNs, B-PINN (HMC \& VI), and Dropout:
+    \vspace{0.3cm}
+    \begin{itemize}
+        \item \textbf{B-PINN-HMC Excels:} Consistently delivers reliable predictive means and correctly calibrated uncertainty bounds across noise scales.
+        \item \textbf{VI Fails:} Factorizable Gaussian assumptions restrict weights from correlating, leading to severely degraded uncertainty quantification.
+        \item \textbf{Overfitting Protection:} Under large noise ($\sigma = 0.1$), B-PINN-HMC acts as a regularizer where deterministic PINNs catastrophically overfit.
+    \end{itemize}
+
+\end{frame}
+
+
+
+% PENEWWWWWWW -- -- -- -- -- -- -- -- -- -- -- --
+\begin{frame}{Metrics for Uncertainty Quantification}
+    Visual checks are insufficient for Bayesian methods. We utilize uncertainty-aware metrics:
+    \begin{itemize}
+        \item \textbf{PICP} (Prediction Interval Coverage): Fraction of true data captured by bounds.
+        $\text{PICP} = \frac{1}{N} \sum_{i=1}^{N} c_i, \quad c_i = \mathbb{I}(L_i \le y_{true, i} \le U_i)$
+        \item \textbf{MPIW} (Mean Prediction Interval Width): Average width of the $\pm 2\sigma$ bands.
+        $\text{MPIW} = \frac{1}{N} \sum_{i=1}^{N} (U_i - L_i)$
+        \item \textbf{NLL} (Negative Log-Likelihood): Penalizes "confidently wrong" models.
+        \[ \text{NLL} = \frac{1}{N} \sum_{i=1}^{N} \left( \frac{\log(2\pi\sigma_i^2)}{2} + \frac{(y_i - \mu_i)^2}{2\sigma_i^2} \right) \]
+        \item \textbf{ECE} (Expected Calibration Error): Weighted average of bin-wise error.
+        \[ \text{ECE} = \sum_{m=1}^{M} \frac{|B_m|}{N} \left| \text{acc}(B_m) - \text{conf}(B_m) \right| \]
+    \end{itemize}
+\end{frame}
+
+% Slide 7
+\begin{frame}{B-PINNs with Unknown Noise}
+    \textbf{The Unrealistic Assumption:}
+    \begin{itemize}
+        \item Standard models assume the noise level $\sigma_f$ is perfectly known. In real physics scenarios, this is rarely true.
+    \end{itemize}
+    \vspace{0.3cm}
+    \textbf{Our Fix: Hierarchical B-PINNs}
+    \begin{itemize}
+        \item We assigned a log-normal prior to the noise and jointly inferred it alongside network weights using HMC.
+        \item \textbf{Mathematical Adjustment:} The normalization constant cannot be dropped. The log-likelihood must explicitly retain the variance penalty:
+        $$ \log P(\mathcal{D}_f | \theta, \psi) \propto -N_f \psi - \frac{SSE_f(\theta)}{2 \exp(2\psi)} $$
+        where $\psi = \log \sigma_f$.
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}{Experimental Results: 1D Poisson equation ($\lambda u_{xx} = f(x)$)}
+
+\begin{figure}
+\centering
+\begin{tabular}{@{}cccc@{}}
+\includegraphics[width=0.22\textwidth]{Figures/1D poisson sigma = 0.01/BPINN.png} &
+\includegraphics[width=0.22\textwidth]{Figures/1D poisson sigma = 0.01/HBPINN_modif.png} &
+\includegraphics[width=0.22\textwidth]{Figures/dropout/dropout_1_01.png} &
+\includegraphics[width=0.22\textwidth]{Figures/dropout/dropout_5_01.png} \\
+\scriptsize (a) BPINN & \scriptsize (b) BPINN w prior & \scriptsize (c) Dropout 1\% & \scriptsize (d) Dropout 5\% \\
+\includegraphics[width=0.22\textwidth]{Figures/1D poisson sigma = 0.01/PINN.png} \\
+\scriptsize (e) PINN
+% Add more images here if needed, or leave empty for now
+\end{tabular}
+\end{figure}
+
+\end{frame}
+
+
+\begin{frame}{Experimental Results: 1D Poisson equation ($\lambda u_{xx} = f(x)$) (1)}
+
+  
+\begin{table}[h]
+\centering
+\resizebox{0.45\textwidth}{!}{%
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+ & B-PINN & B-PINN (unknown noise)  & PINN & Dropout -5\% & Dropout - 1\%  \\
+\hline
+Relative $L^2$ norm & 0.2952  & 0.2251  &   0.4338 & 0.3644 &0.3713 \\
+\hline
+PICP & 92.60 & 100 & - & 95.50 & 54.00 \\
+\hline
+MPIW & 0.6465 & 0.7137 & - & 0.7864 & 0.4048 \\
+\hline
+NLL & -0.3885 & -0.7345 & - & -0.2677 & 0.3478 \\
+\hline
+ECE &  0.1307 & 0.1016 & -  & 0.0374 & 0.3090 \\
+\hline
+\end{tabular}}
+\caption{\tiny Metrics for the 1D poisson equation forward problem with measurement noise 0.1}
+\label{tab:5x5}
+\end{table}
+
+
+
+\begin{table}[h]
+\centering
+\resizebox{0.45\textwidth}{!}{%
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+ & B-PINN & B-PINN (unknown noise)  & PINN & Dropout 5\% & Dropout 1\%   \\
+\hline
+Relative $L^2$ norm & 0.2220  & 0.2492  &   0.0324 & 0.4341 & 0.3059  \\
+\hline
+PICP( \%) & 100 & 100 & - & 86.00 & 95.50 \\
+\hline
+MPIW & 0.6389 & 0.3887 & - & 0.7398 & 0.4462 \\
+\hline
+NLL & -0.6452 & -0.8415  & - & -0.0357 & -0.3265 \\
+\hline
+ECE &  0.0640 & 0.2432 & - & 0.0367 & 0.1950\\
+\hline
+\end{tabular}}
+\caption{ \tiny Metrics for the 1D poisson equation forward problem with measurement noise 0.01}
+\label{tab:5x5}
+\end{table}
+
+\textbf{B-PINN vs. PINN under Noise Regimes}
+\begin{itemize}
+    \item High Noise: Standard PINNs overfit sensor noise, leading to high $L^2$ error. B-PINNs treat physics as "soft" constraints, filtering high-frequency noise to achieve a lower error of 0.2952.
+    \item Low Noise: Standard PINNs excel by finding the global minimum of clean data. B-PINNs struggle to sample these "sharp" peaks via HMC, resulting in a slightly higher mean error of 0.2220.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Experimental Results: 1D Poisson equation ($\lambda u_{xx} = f(x)$) (2)}
+
+  
+\begin{table}[h]
+\centering
+\resizebox{0.45\textwidth}{!}{%
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+ & B-PINN & B-PINN (unknown noise)  & PINN & Dropout -5\% & Dropout - 1\%  \\
+\hline
+Relative $L^2$ norm & 0.2952  & 0.2251  &   0.4338 & 0.3644 &0.3713 \\
+\hline
+PICP & 92.60 & 100 & - & 95.50 & 54.00 \\
+\hline
+MPIW & 0.6465 & 0.7137 & - & 0.7864 & 0.4048 \\
+\hline
+NLL & -0.3885 & -0.7345 & - & -0.2677 & 0.3478 \\
+\hline
+ECE &  0.1307 & 0.1016 & -  & 0.0374 & 0.3090 \\
+\hline
+\end{tabular}}
+\caption{\tiny Metrics for the 1D poisson equation forward problem with measurement noise 0.1}
+\label{tab:5x5}
+\end{table}
+
+
+
+\begin{table}[h]
+\centering
+\resizebox{0.45\textwidth}{!}{%
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+ & B-PINN & B-PINN (unknown noise)  & PINN & Dropout 5\% & Dropout 1\%   \\
+\hline
+Relative $L^2$ norm & 0.2220  & 0.2492  &   0.0324 & 0.4341 & 0.3059  \\
+\hline
+PICP( \%) & 100 & 100 & - & 86.00 & 95.50 \\
+\hline
+MPIW & 0.6389 & 0.3887 & - & 0.7398 & 0.4462 \\
+\hline
+NLL & -0.6452 & -0.8415  & - & -0.0357 & -0.3265 \\
+\hline
+ECE &  0.0640 & 0.2432 & - & 0.0367 & 0.1950\\
+\hline
+\end{tabular}}
+\caption{ \tiny Metrics for the 1D poisson equation forward problem with measurement noise 0.01}
+\label{tab:5x5}
+\end{table}
+
+
+
+
+
+\textbf{The behaviour of the B-PINN with a noise prior}
+\begin{itemize}
+    \item High Noise: Superior performance. The inferred noise parameter ($\sigma_f$) acts as an adaptive weight, allowing the model to prioritize physical consistency over noisy contradictory data.
+    \item Low Noise: Although the model overestimates the $0.01$ noise scale, it ensures robustness. This dynamic parameter prevents HMC divergence by avoiding "numerical traps" caused by overly sharp posteriors, maintaining 100\% coverage.
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}{Experimental Results: 1D Poisson equation ($\lambda u_{xx} = f(x)$) (3)}
+
+  
+\begin{table}[h]
+\centering
+\resizebox{0.45\textwidth}{!}{%
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+ & B-PINN & B-PINN (unknown noise)  & PINN & Dropout -5\% & Dropout - 1\%  \\
+\hline
+Relative $L^2$ norm & 0.2952  & 0.2251  &   0.4338 & 0.3644 &0.3713 \\
+\hline
+PICP & 92.60 & 100 & - & 95.50 & 54.00 \\
+\hline
+MPIW & 0.6465 & 0.7137 & - & 0.7864 & 0.4048 \\
+\hline
+NLL & -0.3885 & -0.7345 & - & -0.2677 & 0.3478 \\
+\hline
+ECE &  0.1307 & 0.1016 & -  & 0.0374 & 0.3090 \\
+\hline
+\end{tabular}}
+\caption{\tiny Metrics for the 1D poisson equation forward problem with measurement noise 0.1}
+\label{tab:5x5}
+\end{table}
+
+
+
+\begin{table}[h]
+\centering
+\resizebox{0.45\textwidth}{!}{%
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+ & B-PINN & B-PINN (unknown noise)  & PINN & Dropout 5\% & Dropout 1\%   \\
+\hline
+Relative $L^2$ norm & 0.2220  & 0.2492  &   0.0324 & 0.4341 & 0.3059  \\
+\hline
+PICP( \%) & 100 & 100 & - & 86.00 & 95.50 \\
+\hline
+MPIW & 0.6389 & 0.3887 & - & 0.7398 & 0.4462 \\
+\hline
+NLL & -0.6452 & -0.8415  & - & -0.0357 & -0.3265 \\
+\hline
+ECE &  0.0640 & 0.2432 & - & 0.0367 & 0.1950\\
+\hline
+\end{tabular}}
+\caption{ \tiny Metrics for the 1D poisson equation forward problem with measurement noise 0.01}
+\label{tab:5x5}
+\end{table}
+
+
+
+
+\textbf{The impact of the prior on the noise on the uncertainty}
+    \begin{itemize}
+        \item Produces wider, more conservative bands (MPIW 0.7137) at high noise than the vanilla B-PINN
+        \item In low noise, it produces tighter intervals than vanilla B-PINN (0.3887 vs 0.6389), possibly because of a better HMC behaviour due to its inflated noise estimation
+    \end{itemize}
+\textbf{Dropout Failure}
+\begin{itemize}
+    \item  Dropout bands are dictated by the \textit{rate}, not the \textit{data}.
+    \end{itemize}
+\end{frame}
+
+
+  
+
+% Slide 14
+\begin{frame}{Conclusion}
+    \begin{itemize}
+        \item \textbf{B-PINNs $>$ PINNs for Noise:} HMC-driven B-PINNs successfully regularize against overfitting in chaotic PDE problems.
+        \item \textbf{Metrics Matter:} Rigorous quantitative evaluation (PICP, MPIW) is crucial—visuals and Dropout are deceptive.
+        \item \textbf{Dynamic Noise is Powerful:} Joint inference of noise (HBPINN) prevents numerical divergence and improves HMC sampling stability, even acting as a mathematical "shock absorber."
+        \item \textbf{Finite $>$ Infinite:} While mathematically elegant, infinite-width PI-GPs fail on complex dynamics compared to adaptive, finite-width B-PINNs.
+    \end{itemize}
+\end{frame}
+
+
+% Slide 16 (References)
+\begin{frame}[allowframebreaks]{References}
+    \bibliographystyle{plain}
+    \bibliography{references}
+\end{frame}
+
+\end{document}

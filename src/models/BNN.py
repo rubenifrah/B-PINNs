@@ -16,12 +16,13 @@ class BNN(nn.Module):
     # slice the 1D `theta` vector into weight and bias matrices during the forward pass.
     # Tracking these shapes during initialization is required for this runtime slicing.
     # =========================================================================
-    def __init__(self, input_dim, output_dim, hidden_dims, activation=nn.Tanh()):
+    def __init__(self, input_dim, output_dim, hidden_dims, activation=nn.Tanh(), prior_std=1.0):
         super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hidden_dims = hidden_dims
         self.activation = activation
+        self.prior_std = prior_std
         
         # Track shapes for slicing the 1D theta vector during functional forward
         self.param_shapes = []
@@ -95,7 +96,9 @@ class BNN(nn.Module):
                 
         return current_x
 
-    def log_prior(self, theta, sigma_theta=1.0):
+    def log_prior(self, theta, sigma_theta=None):
+        if sigma_theta is None:
+            sigma_theta = self.prior_std
         # Log of the Gaussian prior: - (1/2 * sigma^2) * sum(theta^2)
         return -0.5 * torch.sum(theta**2) / (sigma_theta**2)
     
@@ -128,7 +131,7 @@ class BNN(nn.Module):
         # Create a proxy function for the PDE module to compute spatial derivatives
         # This function wraps the functional forward so the PDE evaluator doesn't
         # need to know about theta handling.
-        def u_func_for_pde(x):
+        def u_func_for_pde(x, params=None):
             return self.functional_forward(theta, x)
         
         # Compute the residual using the PDE problem definition

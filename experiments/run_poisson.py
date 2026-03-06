@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.models.PINN import PINN
 from src.models.BNN import BNN
-from src.physics.PDEs import Poisson1D
+from src.physics.PDEs import Poisson1D, PDEProblem
 from src.utils.plotting import plot_1d_pinn, plot_1d_bpinn, plot_loss_curves
 from src.utils.training import train_pinn, train_bpinn
 from src.utils.metrics import evaluate_uncertainty, compute_ece_and_plot, compute_relative_l2
@@ -20,36 +20,42 @@ from src.utils.metrics import evaluate_uncertainty, compute_ece_and_plot, comput
 # =========================================================================
 
 def run_poisson_experiment():
-    # Setup Data and Physics
-    lambd = 0.01  # Diffusion coefficient from paper
-    
+    # Domain is [-0.7, 0.7]
+    lambd = 0.01
+
     # Boundary data (x_b, y_b)
     x_b = torch.tensor([[-0.7], [0.7]], dtype=torch.float32)
     y_b = torch.sin(6 * x_b)**3
     
-    # Collocation points (x_f), forcing term measurements (y_f)
+    # Collocation points (x_f) for forcing term
+    # Using the higher density from main branch (Nbr=80) rather than 16 from local, 
+    # but could be customized. Let's keep a good density.
     Nbr_colloc = 80
     x_f = torch.linspace(-0.7, 0.7, Nbr_colloc).view(-1, 1).requires_grad_(True)
+    
+    # Analytical forcing term f = \lambda u_xx
     y_f = lambd * (216 * torch.sin(6 * x_f) * torch.cos(6 * x_f)**2 - 108 * torch.sin(6 * x_f)**3).detach()
     
-    # Add noisy data mirroring the standard testing setup
-    sigma_u = 0.01
-    sigma_f = 0.01
+    # Add noisy data mirroring the paper's testing setup
+    noise_scale = 0.1
+    sigma_u = noise_scale
+    sigma_f = noise_scale
+
     y_b = y_b + torch.randn_like(y_b) * sigma_u
     y_f = y_f + torch.randn_like(y_f) * sigma_f
 
-    # Define the parameters of the problem
+    # Define the parameters of the problem using the predefined class in PDEs.py
     pde_problem = Poisson1D(x_f, y_f, sigma_f, lambd=lambd)    
         
     # Define the true solution for evaluation
     def true_u(x):
         return np.sin(6 * x)**3
-
     # =========================================================================
     # Standard PINN Baseline
     # =========================================================================
     print("========================================")
     print("Training Standard PINN baseline...")
+    # Exact architecture from Yang et al. 2020: 2 hidden layers with 50 neurons
     pinn_model = PINN(input_dim=1, output_dim=1, hidden_dims=[50, 50])
     
     pinn_model, history = train_pinn(
@@ -80,6 +86,7 @@ def run_poisson_experiment():
     print("\n========================================")
     print("Training B-PINN (HMC)...")
     bnn_model = BNN(input_dim=1, output_dim=1, hidden_dims=[50, 50])
+    
     samples = train_bpinn(
         model=bnn_model,
         pde_problem=pde_problem,

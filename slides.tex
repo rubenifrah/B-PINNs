@@ -1,0 +1,221 @@
+\documentclass{beamer}
+
+% --- Theme & Colors ---
+\usetheme{Singapore}
+\usecolortheme{default}
+
+% --- Navigation & Page Numbering Setup ---
+% 1. Remove standard bottom navigation symbols (arrows)
+\setbeamertemplate{navigation symbols}{}
+
+% 2. Add page numbering (Slide X / Y) to the bottom right
+\setbeamertemplate{footline}{%
+    \hfill%
+    \usebeamercolor[fg]{page number in head/foot}%
+    \usebeamerfont{page number in head/foot}%
+    \insertframenumber\,/\,\inserttotalframenumber\kern1em\vskip2pt%
+}
+
+% --- Packages ---
+\usepackage{graphicx}
+\usepackage{booktabs} % For nicer tables if needed
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, calc, backgrounds, fit}
+\usepackage{amsmath, amssymb}
+
+% Metadata
+\title[B-PINNs]{Bayesian Physics-Informed Neural Networks}
+\subtitle{Bayesian Machine Learning}
+\author[Anouk Ruer -- Ruben Ifrah -- Pénélope Forcioli]{Anouk Ruer -- Ruben Ifrah -- Pénélope Forcioli}
+\institute[]{Université Paris Dauphine - PSL\\ \vspace{0.3cm} \includegraphics[height=1.5cm]{LOGO-PSL-nov-2017.png}}
+\date{March 2026}
+
+\begin{document}
+
+% Slide 1
+\begin{frame}
+    \titlepage
+\end{frame}
+
+% Slide 2
+\begin{frame}{Introduction \& Motivation}
+    \textbf{Physics-Informed Neural Networks (PINNs)} successfully embed PDE constraints into neural networks:
+    \[ \mathcal{N}_x(u; \lambda) = f \quad \text{(domain)} \quad \mathcal{B}_x(u; \lambda) = b \quad \text{(boundary)} \]
+    
+    \vspace{0.3cm}
+    \begin{block}{The Limitation}
+        Standard PINNs rely on deterministic optimization (e.g., Adam/L-BFGS). When sensor data is \textbf{noisy}, PINNs lack built-in Uncertainty Quantification (UQ) and are highly prone to \textbf{overfitting} the noise, corrupting the underlying physics.
+    \end{block}
+    
+    \vspace{0.3cm}
+    \textbf{Solution:} Bayesian PINNs (B-PINNs) formulate the PDE problem probabilistically to obtain a posterior distribution over solutions, granting crucial uncertainty estimates.
+\end{frame}
+
+% Slide 3
+\begin{frame}{Methodology: Bayesian PINNs}
+    \begin{itemize}
+        \item \textbf{Surrogate Model:} Unknown solution $u(x)$ modeled by a fully connected Neural Network $\tilde{u}(x; \theta)$.
+        \item \textbf{Physics as a Likelihood:} Assume Gaussian noise with variance $\sigma^2$ on point observations $\mathcal{D} = \{D_u, D_f, D_b\}$:
+    \end{itemize}
+    
+    \begin{block}{Likelihood Function}
+    \vspace{-0.3cm}
+    \begin{align*}
+        P(\mathcal{D}|\theta) \propto &\exp \left( -\sum \frac{(\tilde{u}_i - \bar{u}_i)^2}{2\sigma_u^{2}} \right) \\ &\cdot \exp \left( -\sum \frac{(\tilde{f}_i - \bar{f}_i)^2}{2\sigma_f^{2}} \right) \cdot \exp \left( -\sum \frac{(\tilde{b}_i - \bar{b}_i)^2}{2\sigma_b^{2}} \right)
+    \end{align*}
+    \end{block}
+    
+    Placing a standard Gaussian prior on the weights $\mathcal{N}(0, I)$ gives the unnormalized posterior:
+    \[ P(\theta|\mathcal{D}) \propto P(\mathcal{D}|\theta) P(\theta) \]
+\end{frame}
+
+% Slide 4
+\begin{frame}{Predictive Inference: How to Sample $P(\theta|\mathcal{D})$?}
+    \begin{columns}
+        \begin{column}{0.48\textwidth}
+            \textbf{Hamiltonian MCMC}
+            \begin{itemize}
+                \item Uses conservative physics gradients to simulate particle trajectories through parameter space.
+                \item Gold standard, asymptotically \textbf{exact} posterior sampling.
+                \item Computationally expensive.
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{Variational Inference}
+            \begin{itemize}
+                \item Recasts inference as optimization via KL-Divergence.
+                \item Fast to run.
+                \item \textbf{Flaw:} Often relies on Mean-Field (factorized) Gaussian approximations, severely breaking weight correlations and underestimating variance.
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.3cm}
+    \textbf{The Heuristic Baseline:} Monte Carlo Dropout (cheap, but often uncalibrated).
+\end{frame}
+
+% Slide 5
+\begin{frame}{Evaluating Uncertainty}
+    Beyond just Mean Squared Error, B-PINNs must be evaluated on the \emph{quality} of their uncertainty distributions:
+    \vspace{0.3cm}
+    \begin{itemize}
+        \item \textbf{Relative $L^2$ Norm:} Predictive mean accuracy.
+        \item \textbf{PICP (Prediction Interval Coverage):} The \% of true data points falling inside the predicted bounds (Target: 95\% for $2\sigma$).
+        \item \textbf{MPIW (Mean Prediction Interval Width):} Average width of the confidence interval (Sharpness).
+        \item \textbf{Negative Log-Likelihood \& Expected Calibration Error (ECE):} Penalizes models that are "confidently wrong".
+    \end{itemize}
+\end{frame}
+
+% Slide 6
+\begin{frame}{Empirical Setup: 1D Poisson Equation}
+    Tested on the forward problem $\lambda u_{xx} = f(x)$ under two regimes to stress-test the models:
+    \begin{itemize}
+        \item \textbf{Low Noise Regime:} $\sigma_u = \sigma_f = 0.01$
+        \item \textbf{High Noise Regime:} $\sigma_u = \sigma_f = 0.1$
+    \end{itemize}
+    
+    \vspace{0.3cm}
+    Network configuration: Fully connected, 2 layers of 50 Tanh neurons.
+\end{frame}
+
+
+% Slide 7
+\begin{frame}{Results: PINN vs B-PINN (High Noise $\sigma=0.1$)}
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=0.45\textwidth]{Figures/1D poisson sigma=0.1/PINN.png}
+        \includegraphics[width=0.45\textwidth]{Figures/1D poisson sigma=0.1/BPINN.png}
+        \caption{\textbf{Left:} Standard PINN wildly overfits the noise. \textbf{Right:} B-PINN gracefully smooths the uncertainty and recovers the true physics.}
+    \end{figure}
+\end{frame}
+
+% Slide 8
+\begin{frame}{Results: The Failure of VI and Dropout}
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{Variational Inference (VI)}
+            \begin{itemize}
+                \item Factorized family completely breaks the highly correlated weight space of a BNN.
+                \item Yields inaccurate means and meaningless confidence bounds.
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \textbf{Monte Carlo Dropout}
+            \begin{itemize}
+                \item Uncertainty is dictated by the dropout rate (e.g., 1\% vs 5\%), not the physical noise level.
+                \item High ECE (0.3090) -> highly uncalibrated.
+                \item 1\% dropout misses almost half the true physical points (PICP = 54\%).
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% Slide 9
+\begin{frame}{Extension 1: Inferring Unknown Noise}
+    \textbf{Problem:} Real-life applications strictly do \emph{not} know the underlying equation noise scale $\sigma_f$.
+    \vspace{0.2cm}
+    
+    \textbf{Solution:} HMC parameter space is augmented from $\theta \to [\theta, \psi]$ where $\psi = \log \sigma_f$. By placing a hyper-prior on $\sigma_f$, the sampler dynamically learns the noise scale during inference.
+    \vspace{0.2cm}
+    
+    \begin{block}{Result}
+       The dynamic noise parameter acts as a robust safety valve. By artificially inflating inferred noise on chaotic data points, it effectively down-weights the data likelihood loss penalty. B-PINNs with unknown noise inference achieved \textbf{100\% Coverage} (PICP).
+    \end{block}
+\end{frame}
+
+% Slide 10
+\begin{frame}{Extension 2: The Theoretical Limit (PI-GP)}
+    What happens if we scale the BNN width to infinity ($N \to \infty$)?
+    \vspace{0.2cm}
+    
+    By the Central Limit Theorem \cite{Lee2018}, the surrogate function $u(x)$ converges into a Neural Network Gaussian Process (NNGP):
+    \[ u(\cdot) \sim \mathcal{GP}\big(0, k_{\text{NNGP}}(x, x')\big) \]
+    
+    If the PDE is linear, spatial derivatives commute with the covariance:
+    \[ \text{Cov}\big(\mathcal{L}_x u(x), \mathcal{L}_{x'} u(x')\big) = \mathcal{L}_x \mathcal{L}_{x'} k(x, x') \]
+    
+    This yields a massive block matrix over all sensors. The Physics-Informed GP (PI-GP) produces the \textbf{exact, mathematically convex, analytical posterior field—bypassing unstable HMC sampling entirely.}
+\end{frame}
+
+% Slide 11
+\begin{frame}{Empirical Failure of the PI-GP (Spectral Bias)}
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=1.0\textwidth]{Figures/GP/test_gp_result.png}
+        \vspace{-0.5cm}
+        \caption{Testing the PI-GP on target $u(x) = \sin^3(6x)$ under noise.}
+    \end{figure}
+    
+    Taking width $N \to \infty$ invokes the "Neural Tangent Kernel" regime. Network features freeze permanently into a rigid, stationary NNGP kernel. Unable to capture local high frequencies, it suffers from severe \textbf{Spectral Bias}.
+\end{frame}
+
+% Slide 12
+\begin{frame}{The Power of Finite B-PINNs}
+    \begin{block}{Why do Finite BNNs Succeed?}
+        While infinite-width networks freeze into rigid priors, finite-width networks (e.g., $N=50$) retain the capacity for dynamic \textbf{Representation Learning}.
+    \end{block}
+    \vspace{0.3cm}
+    During HMC iterations, finite parameters actively warp their internal basis functions to perfectly align with sharp, localized, multi-scale physical gradients. 
+    
+    $\Rightarrow$ Finite B-PINNs remain vastly practically superior to their infinite-width PI-GP counterparts.
+\end{frame}
+
+% Slide 13
+\begin{frame}{Conclusion \& Future Research}
+    \textbf{Summary:}
+    \begin{itemize}
+        \item B-PINNs via HMC sampling drastically outperform deterministic PINNs and MC Dropout approximations in noisy environments.
+        \item They yield well-calibrated uncertainty bounds (PICP $\sim$ 95\%).
+    \end{itemize}
+    
+    \vspace{0.2cm}
+    \begin{block}{Future Directions}
+        \begin{itemize}
+            \item \textbf{Inverse Problems:} Inferring unknown physical parameters concurrently with the PDE state solution.
+            \item \textbf{Advanced Variational Inference:} Exploring heavy-tailed Normalizing Flows for scalable, fast B-PINN evaluation.
+            \item \textbf{Adaptive Priors:} Investigating structural weight priors that specifically encourage network sparsity to regress multi-scale phenomena.
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\end{document}

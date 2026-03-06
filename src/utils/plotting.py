@@ -61,6 +61,15 @@ def plot_1d_pinn(model, x_u, y_u, x_f, y_f=None, true_solution_func=None, title=
     ax1.grid(True, linestyle='-', alpha=0.3)
     ax1.legend(loc='upper right', fontsize=12)
     
+    # only plot the colocation points, no need to plot y_f on a secondary axis
+    # the y_f is just the forcing term, which is not really needed to be plotted
+
+    # plot the collocation points on the bottom
+    min_y = min(np.min(u_pred), np.min(y_u_np))
+    if true_solution_func is not None:
+        min_y = min(min_y, np.min(u_true))
+    ax1.scatter(x_f_np, np.full_like(x_f_np, min_y - 0.5), color='green', marker='x', s=30, label='Collocation Locations', alpha=0.5)
+
     plt.title(title, fontsize=16)
     plt.tight_layout()
     
@@ -135,11 +144,16 @@ def plot_1d_bpinn(model, samples, x_u, y_u, x_f, y_f=None, true_solution_func=No
     #     ...
 
     ax1.set_xlabel('x', fontsize=14)
-    ax1.set_ylabel('u(x)', fontsize=14)
-    # ax1.tick_params(axis='y', labelcolor='b')
-    ax1.grid(True, linestyle='-', alpha=0.3)
+    ax1.set_ylabel('u(x) [Primary Axis]', fontsize=14, color='b')
+    ax1.tick_params(axis='y', labelcolor='b')
+    ax1.grid(True, linestyle=':', alpha=0.7)
     ax1.legend(loc='upper right', fontsize=12)
-        
+    
+    # plot the collocation points on the bottom
+    min_y = min(np.min(u_pred), np.min(y_u_np))
+    if true_solution_func is not None:
+        min_y = min(min_y, np.min(u_true))
+    ax1.scatter(x_f_np, np.full_like(x_f_np, min_y - 0.5), color='green', marker='x', s=30, label='Collocation Locations', alpha=0.5)
     plt.title(title, fontsize=16)
     plt.tight_layout()
     

@@ -1,0 +1,317 @@
+\documentclass{beamer}
+
+% --- Theme & Colors ---
+\usetheme{Singapore}
+\usecolortheme{default}
+
+% --- Navigation & Page Numbering Setup ---
+% 1. Remove standard bottom navigation symbols (arrows)
+\setbeamertemplate{navigation symbols}{}
+
+% 2. Add page numbering (Slide X / Y) to the bottom right
+\setbeamertemplate{footline}{%
+    \hfill%
+    \usebeamercolor[fg]{page number in head/foot}%
+    \usebeamerfont{page number in head/foot}%
+    \insertframenumber\,/\,\inserttotalframenumber\kern1em\vskip2pt%
+}
+
+% --- Packages ---
+\usepackage{graphicx}
+\usepackage{booktabs} % For nicer tables if needed
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, calc, backgrounds, fit}
+
+% Metadata
+\title[Song Quality Dataset]{Building a Dataset for Song Quality Assessment}
+\subtitle{Data Acquisition, Extraction, and Storage Project}
+\author[Jacques, Joey, Magalie, Ruben]{Ruben IFRAH, Joey DAVID, Jacques LACHOUQUE, Magalie ZHU}
+\institute[]{Université Paris Dauphine - PSL\\ \includegraphics[height=3cm]{LOGO-PSL-nov-2017.png}}
+\date{December 19$^{\text{th}}$, 2025}
+
+\begin{document}
+
+%Title
+\begin{frame}
+    \titlepage
+\end{frame}
+
+
+\section*{Introduction}
+\begin{frame}{Context \& Motivation}
+    Overall objective of our dataset: being able to study the following topic
+    \begin{block}{Research Question}
+        \textit{Has the "quality" or complexity of popular music decreased over the last 50 years?}
+    \end{block}
+    
+    \vspace{0.5cm}
+    
+    \textbf{The Data Gap:}
+    \begin{itemize}
+        \item Existing datasets often lack \textbf{multi-modal} depth.
+        \item Simple metadata (artist, title) is insufficient for "quality" analysis.
+        \item We need a rich combination of:
+        \begin{itemize}
+            \item Signal processing (audio)
+            \item Semantic content (lyrics)
+            \item Social reception (comments)
+        \end{itemize}
+    \end{itemize}
+\end{frame}
+
+
+\section{Data \& Pipeline}
+
+\begin{frame}{Data acquisition strategy: 5 sources}
+    We aggregate data from 5 distinct sources to build a comprehensive view of each song:
+    
+    \begin{enumerate}
+        \item \textbf{Wikipedia (Scrapy)}: 
+        \begin{itemize} \item Ground truth for "popularity" (Billboard hot 100 year-end charts).
+        \item \textbf{Awards}: Scrape the page of the song for an awards section.
+        \end{itemize}
+        
+        \item \textbf{Spotify API}: 
+        \begin{itemize} \item Canonical metadata (ids, duration)\end{itemize}
+    
+        \item \textbf{Genius API}: 
+        \begin{itemize} \item full textual lyrics for NLP analysis. \end{itemize}
+        
+        \item \textbf{YouTube (scraping + API)}: 
+        \begin{itemize} \item \textbf{Audio}: fallback for missing Spotify previews.
+        \item \textbf{Comments}: sentiment analysis \& "reception" metrics. \end{itemize}
+        
+        \item \textbf{Librosa (Local processing)}: 
+        \begin{itemize} \item Raw audio feature extraction (MFCC, zero-crossing rate, tempo) from 30s clips. \end{itemize}
+    \end{enumerate}
+\end{frame}
+
+
+\begin{frame}{Pipeline architecture}
+    To handle data scale and complexity, we implemented a \textbf{state-based processing pipeline} (\texttt{pipeline.py}).
+    
+    \begin{block}{Key Architectural Decisions}
+        \begin{enumerate}
+            \item \textbf{Heuristic Link Discovery}: 
+            Instead of blind searching, we use a multi-step verification process (Artist/Title match + Duration validation).
+            
+            \item \textbf{Adaptive Fallback Mechanism}:
+            If a primary resource (e.g., YouTube video comments) is unavailable, the system automatically attempts secondary candidates without manual intervention.
+            
+            \item \textbf{Concurrent Processing}:
+            Utilization of threaded workers for \textit{Audio}, \textit{Links}, \textit{Comments}, and \textit{Awards} to maximize throughput while respecting good API calling and scraping  practices.
+        \end{enumerate}
+    \end{block}
+\end{frame}
+
+\section{Pipeline Walkthrough}
+\begin{frame}{End-to-end data flow}
+  \begin{figure}
+    \centering
+    \resizebox{\textwidth}{!}{\input{pipeline_figure.tikz}}
+    \caption{Stateful flow: discovered links are kept and reused downstream.}
+  \end{figure}
+\end{frame}
+
+
+\begin{frame}{Step-by-step build (fast recap)}
+    \begin{itemize}
+        \item \textbf{Seed + Wikipedia}: Billboard year-end HTML $\rightarrow$ song rows with canonical Wikipedia links stored for reuse.
+        \item \textbf{Identity resolution}: Spotify search (title + artist) for IDs, popularity, duration; Genius search with strict match $\rightarrow$ fuzzy heuristic for lyrics.
+        \item \textbf{Audio acquisition}: pull Spotify \texttt{preview\_url} when available; otherwise run \texttt{ytsearch1} via \texttt{yt-dlp}.
+        \item \textbf{Feature extraction}: Librosa computes MFCCs, tempo, spectral stats from 30s clips for every track with audio.
+        \item \textbf{Social + awards}: YouTube candidates + comments and Wikipedia awards scraped later using the stored links.
+    \end{itemize}
+\end{frame}
+
+
+\section{Findings \& Challenges}
+
+% Slide 4: Data Statistics
+\begin{frame}{Lyrics Statistic}
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{Temporal distribution}
+            \begin{figure}
+                \includegraphics[width=\textwidth]{genius_scraping_results.png}
+                \caption{Songs per year (Target: 100/year)}
+            \end{figure}
+        \end{column}
+        \begin{column}{0.4\textwidth}
+            \textbf{Lyrics coverage}
+            \begin{figure}
+                \includegraphics[width=\textwidth]{genius_status_pie_chart.png}
+                \caption{Lyrics scraping summary}
+            \end{figure}
+        \end{column}
+    \end{columns}
+    \vspace{0.2cm}
+    \begin{itemize}
+        \item We have successfully scraped the base list for all 50 years.
+        \item 95\% of songs have successfully matched lyrics; only 5\% require manual check or are instrumental.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Quick sanity check}
+    Running a quick frequency analysis on the scraped data confirms its validity.
+    
+    \begin{figure}
+        \includegraphics[height=0.45\textheight]{top_15_artists.png}
+        \centering
+    \end{figure}
+    
+    \begin{itemize}
+        \item The "Top 15 Artists" aligns with expected pop culture history (Drake, Madonna, Elton John).
+        \item Which confirms that our \texttt{billboard\_spider} is correctly parsing the HTML tables across different Wikipedia layouts.
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}{Challenge 1: entity resolution (Genius API)}
+    \textbf{Issue}: Ambiguity in song titles led to incorrect matches (e.g., "Symphony" songs in 2017 and 1946, or "live" versions).
+
+    \begin{columns}
+        \begin{column}{0.3\textwidth}
+            \begin{block}{Solution: multi step process}
+                \begin{enumerate}
+                    \item \textbf{Strict match}
+                    \item \textbf{check artist}\\ (Levenshtein distance)
+                    \item \textbf{Check release year}
+                \end{enumerate}
+            \end{block}
+        \end{column}
+        \begin{column}{0.8\textwidth}
+            \begin{figure}
+                \includegraphics[width=\textwidth]{genius_scraping_results.png}
+                \caption{95\% lyrics found}
+            \end{figure}
+        \end{column}
+    \end{columns}
+    
+\end{frame}
+
+% \begin{frame}{Genius Heuristics}
+%     \begin{figure}
+%         \includegraphics[width=\textwidth]{genius_scraping_results.png}
+%         \caption{Ambiguous matches mainly concern $\leq1960$ songs}
+%     \end{figure}
+% \end{frame}
+
+\begin{frame}{Challenge 2: data access \& API constraints}
+    \textbf{Objective}: retrieve audio features (danceability, energy) via Spotify API.
+    \textbf{Issue}: persistent \texttt{403 Forbidden} errors on the \texttt{/audio-features} endpoint (Nov 2024 policy update).
+
+    \begin{block}{Investigation}
+        We investigated multiple potential causes:
+        \begin{itemize}
+            \item Application permissions ("dev mode" vs production).
+            \item Authentication flow (client credentials vs authorization code).
+            \item Library issues (attempts with \texttt{spotipy} and raw \texttt{requests}).
+        \end{itemize}
+    \end{block}
+
+    \begin{alertblock}{Resolution}
+        We shifted our strategy from API dependency to local computation.
+        \begin{itemize}
+            \item Retained Spotify for \textbf{Identity Resolution} (ID, popularity).
+            \item Implemented a custom module using \textbf{Librosa} to compute spectral features directly from audio samples.
+        \end{itemize}
+    \end{alertblock}
+\end{frame}
+
+\begin{frame}{Audio capture \& Librosa analysis}
+    \begin{itemize}
+        \item \textbf{Preview-first}: batch-fetch Spotify \texttt{preview\_url} (50 IDs/request); download clips when present.
+        \item \textbf{Fallback}: if no preview, \texttt{yt-dlp} searches \texttt{"<title> <artist>"} (up to 3 attempts) and downloads best audio without playlists.
+        \item \textbf{Processing}: audio is resampled (22.05 kHz, 30s cap) then fed to \texttt{compute\_audio\_features} for MFCCs, ZCR, RMS, tempo, spectral rolloff, etc.
+        \item \textbf{Provenance}: each row tracks its source (spotify or youtube search) to know which clips need manual review.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Wikipedia scraping (Scrapy)}
+    \begin{itemize}
+        \item \textbf{Inputs}: \texttt{data/songs\_database.json} rows with pre-resolved Wikipedia URLs (or \texttt{link}/\texttt{wikipedia\_link}).
+        \item \textbf{Keywords}: \texttt{award}, \texttt{grammy}, \texttt{accolade}, \texttt{honor}, \texttt{nomination}, \texttt{won}, \texttt{listed}, \texttt{ranking}, etc.
+        \item \textbf{Extraction via Scrapy/XPath}: walk \texttt{mw-parser-output} bullets (\texttt{ul/ol/li}), paragraphs, and \texttt{wikitable} rows; collect text containing keywords, deduplicate, and emit per-track.
+        \item \textbf{Output}: \texttt{data/wikipedia\_awards.json} keyed by track, preserving source URL for traceability.
+        \item \textbf{Why it matters}: captured accolades enrich quality signals beyond popularity or audio stats.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{YouTube scraping (Scrapy)}
+    \begin{itemize}
+        \item Discovery: \texttt{analysis/discover\_links.py} builds \texttt{youtube\_candidates} via \texttt{yt-dlp ytsearchN} (title + artist) and saves \texttt{data/youtube\_links.json}.
+        \item \textbf{Scrapy extraction path}: load watch HTML, parse \texttt{ytInitialData} + \texttt{INNERTUBE\_API\_KEY} + \texttt{VISITOR\_DATA}, pull first comment continuation token. If no tokens for a link, try the next candidate, up to 4 links.
+        \item \textbf{API calls}: POST to \texttt{/youtubei/v1/next} with continuation; parse both modern \texttt{commentEntityPayload} and legacy \texttt{commentRenderer} to harvest text, likes, timestamps, author, rank.
+        \item \textbf{Guardrails}: 1s delay, 2 concurrent requests, cap top-N comments, and automatically fall back to next candidate if payload empty.
+    \end{itemize}
+\end{frame}
+
+\section{Final product}
+\begin{frame}{Dataset overview: Proof of Concept with a smaller YAML}
+    We successfully produced a stratified dataset of over 1000 songs covering 50 years of popular music history.
+    
+    \begin{figure}
+        \includegraphics[width=\textwidth]{dist_yearly_coverage.png}
+        \caption{POC dataset songs/year (1970-2020)}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Format Choice: Why YAML?}
+    We selected \textbf{YAML} as our final delivery format (\texttt{songs\_dataset.yaml}).
+    \vspace{0.3cm}
+    
+    \begin{block}{Justification}
+        \begin{itemize}
+            \setlength\itemsep{0.5em}
+            \item \textbf{Hierarchical data support}: 
+            Perfect for non-tabular structures (nested comment threads, list of awards, lyrical metadata).
+            
+            \item \textbf{Readability}: 
+            Indentation-based syntax allows for easy manual inspection of large text blocks (lyrics) without specialized tools.
+            
+            \item \textbf{Interoperability}: 
+            Native strictly-typed support in Python/ML pipelines (efficient tokenization, e.g. under BPE), accurately preserves nulls and lists.
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\begin{frame}{Typical YAML Entry}
+    \centering
+    \begin{columns}[T,onlytextwidth]
+        % Left column: stacked images
+        \column{0.6\textwidth}
+            \includegraphics[width=\linewidth]{whole.png}
+            \includegraphics[width=\linewidth]{lyrics.png}
+
+        % Right column: tall image
+        \column{0.4\textwidth}
+            \includegraphics[width=\linewidth]{audio.png}
+            \includegraphics[width=\linewidth]{comments.png}
+    \end{columns}
+\end{frame}
+
+
+\section*{Conclusion}
+\begin{frame}{Conclusion \& future work}
+    \begin{block}{Achievements}
+        \begin{itemize}
+            \item We built a robust \textbf{multi-source pipeline}\\ Wikipedia $\rightarrow$ Spotify $\rightarrow$ Genius $\rightarrow$ YouTube;
+            \item Solved complex \textbf{entity resolution} issues with heuristics solution / alternatives;
+            \item Overcame API restrictions by implementing \textbf{local audio processing}.
+        \end{itemize}
+    \end{block}
+
+    
+    \begin{block}{Future Work}
+        \begin{itemize}
+            \item \textbf{Scale up}: Run the resource-intensive audio/comment extraction on the full 5,100 song dataset on the cluster.
+            \item \textbf{Add other metadata}: number of instruments, cultural impact (number of covers, apparitions in movies, ...)
+            \item \textbf{Modeling}: Train a model to predict "Song Quality" using the now-available rich multi-modal features.
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+
+
+\end{document}

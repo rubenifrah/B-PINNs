@@ -3,15 +3,15 @@
   <p><i>A from-scratch implementation and extension of the B-PINN methodology for robust uncertainty quantification in PDEs.</i></p>
 </div>
 
-## 📌 Project Context
+## Project Context
 This project is the **end-of-semester research project** for the **Bayesian Machine Learning** course of the **M2 IASD** program (Université Paris Dauphine - PSL). 
 
-## 📖 Project Overview
+## Project Overview
 This repository contains our comprehensive, **from-scratch implementation** of **Bayesian Physics-Informed Neural Networks (B-PINNs)**, initially proposed in the seminal 2020 paper by Yang et al.: *"B-PINNs: Bayesian Physics-Informed Neural Networks for Forward and Inverse PDE Problems with Noisy Data."*
 
 Rather than relying on high-level wrapper libraries, we have built the core Bayesian inference engine—including the **Hamiltonian Monte Carlo (HMC)** sampler and the custom neural network architectures—entirely from the ground up using PyTorch. 
 
-### 🎯 Goals
+### Goals
 Our objective is not just to replicate the findings of Yang et al., but to **push the studies from the paper further**. Specifically, this project aims to:
 1. **Elucidate the B-PINN Methodology**: Provide a transparent codebase that demystifies Bayesian inference for PDE solvers.
 2. **Robustness in Noisy Regimes**: Rigorously benchmark B-PINNs against standard deterministic PINNs to highlight the Bayesian framework's superior capability in handling highly noisy, sparse sensor data.
@@ -20,7 +20,7 @@ Our objective is not just to replicate the findings of Yang et al., but to **pus
 
 ---
 
-## 🔬 Experimental Results & Mini-Report
+## Experimental Results & Mini-Report
 
 ### 1. The B-PINN Framework
 Standard PINNs learn PDE solutions using limited data and physical laws via deterministic gradient descent but lack built-in uncertainty quantification and are highly prone to overfitting when sensor data is noisy. B-PINNs extend this into a Bayesian framework, treating network weights probabilistically to yield a distribution of possible solutions.
@@ -58,12 +58,12 @@ As part of our extended research, we compared finite-width B-PINNs with infinite
 
 ---
 
-## 👥 Team Members
+## Team Members
 * **Anouk RUER**
 * **Pénélope FORCIOLI**
 * **Ruben IFRAH**
 
-## 📂 Repository Structure
+## Repository Structure
 
 * `data/`: Contains raw and processed datasets.
 * `src/`: Core Python modules (The from-scratch B-PINN inference engine).
@@ -74,7 +74,7 @@ As part of our extended research, we compared finite-width B-PINNs with infinite
 * `experiments/`: Executable scripts to run specific setups (`run_poisson.py`, `run_damped.py`, etc.).
 * `report-slides/`: Contains the final NeurIPS-formatted report (`report.tex`) and the presentation slides (`slides-v2.tex`).
 
-## 🚀 Setup and Installation
+## Setup and Installation
 
 1. **Clone the repository:**
    ```bash
@@ -88,7 +88,7 @@ As part of our extended research, we compared finite-width B-PINNs with infinite
    pip install -r requirements.txt
    ```
 
-## 💻 Quick Start
+## Quick Start
 
 To run the full 1D Poisson comparison (Standard PINN vs Bayesian PINN vs Dropouts):
 ```bash

@@ -14,6 +14,11 @@ workplan.md
 # SLURM output files
 *.err
 *.out
+*.aux
+*.log
+*.toc
 
 report-slides/
+
+deliverables/
 

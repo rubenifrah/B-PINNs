@@ -14,11 +14,12 @@ workplan.md
 # SLURM output files
 *.err
 *.out
+.DS_Store
 *.aux
 *.log
 *.toc
+*.sh
 
 report-slides/
 
 deliverables/
-
